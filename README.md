@@ -15,13 +15,14 @@ Luna Unlimited 是一个 **AI-neutral / vendor-neutral Local Agent Capability Ru
 
 ```mermaid
 flowchart LR
-    U["用户在 ChatGPT 提需求"] --> H["ChatGPT / Agent Host"]
-    H --> O["OpenAI 托管的 Tunnel Endpoint"]
-    T["本机 tunnel-client<br/>仅发起出站 HTTPS"] <--> O
-    T --> M["127.0.0.1:18765/mcp"]
-    M --> C["Luna Core<br/>路径、权限、审批、审计"]
-    C --> W["用户授权的 Workspace"]
-    C --> D["本地 Dashboard"]
+    U["用户"] -->|提出工程需求| H["ChatGPT 或 Agent Host"]
+    H -->|发起 MCP 请求| O["OpenAI Tunnel Endpoint"]
+    T["本机 tunnel-client"] -->|出站 HTTPS 轮询| O
+    O -->|返回待执行任务| T
+    T -->|本机转发| M["Luna MCP 端点"]
+    M --> C["Luna Core"]
+    C -->|受控文件与命令操作| W["授权的 Workspace"]
+    C -->|权限、审批和审计| D["本地 Dashboard"]
 ```
 
 网页端负责理解需求、规划和调用工具；本机负责限制目录、校验版本、执行文件操作和允许的开发命令。MCP Server 不需要公网端口，`tunnel-client` 通过出站 HTTPS 拉取任务并把结果送回 OpenAI。
