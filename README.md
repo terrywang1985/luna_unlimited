@@ -1,5 +1,7 @@
 # Luna Unlimited
 
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+
 让 ChatGPT 或其他兼容 MCP 的 Agent，在用户授权和本地安全策略约束下，读取、创建、修改并验证本机工程。
 
 Luna Unlimited 是一个 **AI-neutral / vendor-neutral Local Agent Capability Runtime**。它不是网页逆向代理，也不转发 ChatGPT Cookie；模型继续运行在原来的 Host 中，Luna 只负责把本机 workspace 的受控能力通过 MCP 暴露出去。
@@ -139,6 +141,12 @@ npm run test:workspace
 ```
 
 架构说明和后续能力见 [AGENT_CAPABILITIES_ROADMAP.md](AGENT_CAPABILITIES_ROADMAP.md)。
+
+## 许可证
+
+本项目以 [Apache License 2.0](LICENSE) 发布，版权声明见 [NOTICE](NOTICE)。允许商业使用、修改和再分发；再分发时须遵守许可证中的署名、变更声明和 NOTICE 保留要求。
+
+从 OpenAI 官方 Release 单独下载的 `tunnel-client` 以及 npm 依赖继续遵守各自许可证，不因本项目采用 Apache-2.0 而改变。
 
 ## 官方参考
 

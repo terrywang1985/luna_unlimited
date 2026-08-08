@@ -3,6 +3,7 @@
   "version": "0.3.0",
   "private": true,
   "type": "module",
+  "license": "Apache-2.0",
   "description": "Vendor-neutral local Agent capability runtime with an MCP adapter and local safety controls",
   "scripts": {
     "start": "node src/server.mjs",
