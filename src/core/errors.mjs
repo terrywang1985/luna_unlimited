@@ -1,0 +1,39 @@
+export const CoreErrorCode = Object.freeze({
+  INVALID_ARGUMENT: "INVALID_ARGUMENT",
+  PATH_OUTSIDE_WORKSPACE: "PATH_OUTSIDE_WORKSPACE",
+  SENSITIVE_PATH: "SENSITIVE_PATH",
+  SYMBOLIC_LINK: "SYMBOLIC_LINK",
+  PATH_NOT_DIRECTORY: "PATH_NOT_DIRECTORY",
+  PATH_NOT_FILE: "PATH_NOT_FILE",
+  FILE_TOO_LARGE: "FILE_TOO_LARGE",
+  FILE_CHANGED: "FILE_CHANGED",
+  FILE_ALREADY_EXISTS: "FILE_ALREADY_EXISTS",
+  BINARY_FILE: "BINARY_FILE",
+  TOOL_DISABLED: "TOOL_DISABLED",
+  APPROVAL_DENIED: "APPROVAL_DENIED",
+  COMMAND_NOT_ALLOWED: "COMMAND_NOT_ALLOWED",
+  COMMAND_TIMEOUT: "COMMAND_TIMEOUT",
+  PROCESS_FAILED: "PROCESS_FAILED",
+  ROLLBACK_FAILED: "ROLLBACK_FAILED",
+  IO_ERROR: "IO_ERROR",
+  INTERNAL_ERROR: "INTERNAL_ERROR"
+});
+
+export class CoreError extends Error {
+  constructor(code, message, options = {}) {
+    super(message, options);
+    this.name = "CoreError";
+    this.code = code;
+    this.details = options.details || {};
+  }
+}
+
+export function coreError(code, message, details = {}) {
+  return new CoreError(code, message, { details });
+}
+
+export function normalizeCoreError(error, fallbackCode = CoreErrorCode.INTERNAL_ERROR) {
+  if (error instanceof CoreError) return error;
+  const message = error instanceof Error ? error.message : String(error);
+  return new CoreError(fallbackCode, message, { cause: error });
+}

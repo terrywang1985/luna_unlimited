@@ -1,0 +1,29 @@
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+
+# Installed dependencies and downloaded runtime
+node_modules/
+tunnel-client.exe
+.npm-cache/
+
+# Runtime state and logs
+logs/
+*.pid
+
+# Authorized user workspace (never publish user projects by accident)
+workspace/
+
+# Test-generated fixtures
+reliable-project-test/
+approval-test.txt
+permission-test.txt
+contract-*.txt
+mcp-smoke-test.txt
+
+# Editor and OS files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
