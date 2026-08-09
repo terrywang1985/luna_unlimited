@@ -182,4 +182,3 @@ try {
   await core.audit.flush();
   await rm(temporaryRoot, { recursive: true, force: true });
 }
-
