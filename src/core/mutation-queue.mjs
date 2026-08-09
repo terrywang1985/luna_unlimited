@@ -6,6 +6,52 @@ function canonicalKey(value) {
 export class FileMutationQueue {
   constructor() {
     this.entries = new Map();
+    this.sharedCount = 0;
+    this.exclusiveLocked = false;
+    this.workspaceWaiters = [];
+  }
+
+  drainWorkspaceWaiters() {
+    if (this.exclusiveLocked || this.sharedCount > 0 || this.workspaceWaiters.length === 0) return;
+    if (this.workspaceWaiters[0].mode === "exclusive") {
+      this.exclusiveLocked = true;
+      this.workspaceWaiters.shift().resolve();
+      return;
+    }
+    while (this.workspaceWaiters[0]?.mode === "shared") {
+      this.sharedCount += 1;
+      this.workspaceWaiters.shift().resolve();
+    }
+  }
+
+  async acquireWorkspaceShared() {
+    if (!this.exclusiveLocked && this.workspaceWaiters.length === 0) {
+      this.sharedCount += 1;
+    } else {
+      await new Promise((resolve) => this.workspaceWaiters.push({ mode: "shared", resolve }));
+    }
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      this.sharedCount -= 1;
+      this.drainWorkspaceWaiters();
+    };
+  }
+
+  async acquireWorkspaceExclusive() {
+    if (!this.exclusiveLocked && this.sharedCount === 0 && this.workspaceWaiters.length === 0) {
+      this.exclusiveLocked = true;
+    } else {
+      await new Promise((resolve) => this.workspaceWaiters.push({ mode: "exclusive", resolve }));
+    }
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      this.exclusiveLocked = false;
+      this.drainWorkspaceWaiters();
+    };
   }
 
   async acquire(rawKey) {
@@ -37,15 +83,18 @@ export class FileMutationQueue {
   }
 
   async run(key, operation) {
+    const releaseWorkspace = await this.acquireWorkspaceShared();
     const release = await this.acquire(key);
     try {
       return await operation();
     } finally {
       release();
+      releaseWorkspace();
     }
   }
 
   async runMany(keys, operation) {
+    const releaseWorkspace = await this.acquireWorkspaceShared();
     const uniqueKeys = [...new Set(keys.map(canonicalKey))].sort();
     const releases = [];
     try {
@@ -53,6 +102,16 @@ export class FileMutationQueue {
       return await operation();
     } finally {
       for (const release of releases.reverse()) release();
+      releaseWorkspace();
+    }
+  }
+
+  async runExclusive(operation) {
+    const release = await this.acquireWorkspaceExclusive();
+    try {
+      return await operation();
+    } finally {
+      release();
     }
   }
 

@@ -33,6 +33,7 @@ flowchart LR
 - 完整读取同时返回正文与 SHA-256/mtime 元数据，兼容偏好文本或结构化结果的 Host；
 - 获取 SHA-256 文件 revision，避免多个 Agent 互相覆盖；
 - 原子创建或更新最多 50 个文件，失败时回滚；
+- 创建、列出、恢复和删除非 Git 本地恢复点，恢复失败自动回滚；
 - 受控安装 npm 依赖，强制禁用 lifecycle scripts；
 - 运行白名单内的 Git、Go、npm build/test/lint/typecheck 命令；
 - 命令侧项目发现不会越过授权 workspace：Git 仓库、npm manifest 和 Go module 必须位于授权边界内；
@@ -40,13 +41,14 @@ flowchart LR
 - 在本机 Dashboard 查看权限、运行状态、审批队列和审计日志；
 - 拒绝绝对路径、`..`、符号链接逃逸、`.env`、私钥和常见凭据文件。
 
-当前版本提供 11 个 MCP 工具：
+当前版本提供 15 个 MCP 工具：
 
 | 分类 | 工具 |
 | --- | --- |
 | 能力发现 | `get_capabilities` |
 | 浏览与读取 | `list_directory`, `stat_path`, `read_text_file`, `read_text_file_range`, `search_files` |
 | 写入 | `write_text_file`, `replace_text`, `write_files` |
+| 恢复 | `create_checkpoint`, `list_checkpoints`, `restore_checkpoint`, `delete_checkpoint` |
 | 执行 | `exec_command`, `install_dependencies` |
 
 ## 五分钟开始
@@ -138,6 +140,8 @@ New-Item -ItemType Directory -Force "C:\luna-workspaces\my-project"
 从 v0.3.1 起，文件搜索不再继承 workspace 父目录的 ignore 规则；Git 不再向 workspace 父目录寻找 `.git`；npm/Go 命令要求所选 `cwd` 直接包含 `package.json`/`go.mod`；同时会过滤可重定向 Git、Node/npm 和 Go 执行行为的继承环境变量。项目本身的脚本仍属于可变代码，不能因此视为低风险。
 
 从 v0.3.2 起，`read_text_file` 在 MCP 可见文本和结构化结果的 `text` 字段中都返回完整正文；结构化结果同时保留 path、bytes、mtime 和 SHA-256。审计日志只记录元数据，不保存正文。
+
+v0.4.0 提供与 Git 解耦的 `local-snapshot` 恢复后端。快照保存在 workspace 之外的 Luna 私有状态目录，默认最多 20 个；`.git`、敏感凭据、`node_modules` 和 Luna 自己的运行日志不进入快照，恢复时也不会触碰。`restore_checkpoint` 与 `delete_checkpoint` 属于审批保护操作。快照依赖操作系统用户目录权限，不额外加密。
 
 ## 开发与验证
 

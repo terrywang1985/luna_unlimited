@@ -13,7 +13,7 @@ export function buildCapabilities({ workspace, policy, limits, adapter = "unknow
   ]));
 
   return {
-    server: { name: "luna-unlimited", version: "0.3.2" },
+    server: { name: "luna-unlimited", version: "0.4.0" },
     protocol: { adapter, version: protocolVersion },
     workspace: { rootName: path.basename(workspace.root), writable: true },
     features: {
@@ -27,7 +27,8 @@ export function buildCapabilities({ workspace, policy, limits, adapter = "unknow
       commandProjectBoundary: true,
       patch: false,
       process: false,
-      checkpoint: false
+      checkpoint: true,
+      checkpointBackend: "local-snapshot"
     },
     tools,
     limits: {
@@ -35,7 +36,10 @@ export function buildCapabilities({ workspace, policy, limits, adapter = "unknow
       maxBatchBytes: limits.maxBatchBytes,
       maxCommandOutputBytes: limits.maxCommandOutputBytes,
       maxCommandSeconds: 300,
-      maxBatchFiles: 50
+      maxBatchFiles: 50,
+      maxCheckpoints: limits.maxCheckpoints,
+      maxCheckpointFiles: limits.maxCheckpointFiles,
+      maxCheckpointBytes: limits.maxCheckpointBytes
     },
     policy: {
       version: snapshot.version,

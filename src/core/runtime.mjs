@@ -4,6 +4,7 @@ import { mkdir } from "node:fs/promises";
 import { ApprovalManager } from "./approval.mjs";
 import { AuditStore } from "./audit.mjs";
 import { buildCapabilities } from "./capabilities.mjs";
+import { CheckpointService } from "./checkpoints.mjs";
 import { CommandService } from "./commands.mjs";
 import { auditContext, createWorkSessionContext } from "./context.mjs";
 import { CoreErrorCode, coreError, normalizeCoreError } from "./errors.mjs";
@@ -20,10 +21,21 @@ export class LunaCore {
     maxFileBytes,
     maxBatchBytes = maxFileBytes * 8,
     maxCommandOutputBytes,
+    checkpointRoot,
+    maxCheckpointFiles = 5000,
+    maxCheckpointBytes = 128 * 1024 * 1024,
+    maxCheckpoints = 20,
     maxAuditEntries = 500
   }) {
     this.workspace = new WorkspaceService(workspaceRoot);
-    this.limits = { maxFileBytes, maxBatchBytes, maxCommandOutputBytes };
+    this.limits = {
+      maxFileBytes,
+      maxBatchBytes,
+      maxCommandOutputBytes,
+      maxCheckpointFiles,
+      maxCheckpointBytes,
+      maxCheckpoints
+    };
     this.policy = new PolicyService();
     this.approvals = new ApprovalManager({ policy: this.policy });
     this.audit = new AuditStore({ auditLogPath: path.join(logsDir, "audit.jsonl"), maxEntries: maxAuditEntries });
@@ -37,6 +49,15 @@ export class LunaCore {
     });
     this.search = new SearchService({ workspace: this.workspace, maxCommandOutputBytes });
     this.commands = new CommandService({ workspace: this.workspace, mutations: this.mutations, maxCommandOutputBytes });
+    this.checkpoints = new CheckpointService({
+      workspace: this.workspace,
+      mutations: this.mutations,
+      checkpointRoot,
+      excludedPaths: [logsDir],
+      maxCheckpointFiles,
+      maxCheckpointBytes,
+      maxCheckpoints
+    });
 
     this.toolHandlers = {
       get_capabilities: (request) => this.getCapabilities(request),
@@ -48,6 +69,10 @@ export class LunaCore {
       write_text_file: (request) => this.files.writeTextFile(request),
       replace_text: (request) => this.files.replaceText(request),
       write_files: (request) => this.files.writeFiles(request),
+      create_checkpoint: (request) => this.checkpoints.create(request),
+      list_checkpoints: () => this.checkpoints.list(),
+      restore_checkpoint: (request) => this.checkpoints.restore(request),
+      delete_checkpoint: (request) => this.checkpoints.delete(request),
       exec_command: (request) => this.commands.execute(request),
       install_dependencies: (request) => this.commands.installDependencies(request)
     };
@@ -67,6 +92,7 @@ export class LunaCore {
   async initialize({ logsDir }) {
     await mkdir(this.workspace.root, { recursive: true });
     await mkdir(logsDir, { recursive: true });
+    await this.checkpoints.initialize();
     await this.audit.initialize();
   }
 
@@ -75,6 +101,8 @@ export class LunaCore {
     const context = createWorkSessionContext(inputContext);
     const targetPath = request.path
       ?? request.cwd
+      ?? request.checkpointId
+      ?? request.label
       ?? (Array.isArray(request.files) ? request.files.map((file) => file.path).join(", ").slice(0, 500) : ".");
     const handler = this.toolHandlers[tool];
     if (!handler) {
@@ -128,7 +156,7 @@ export class LunaCore {
         path: targetPath,
         status: "error",
         durationMs: Math.round(performance.now() - started),
-        details: { error: error.message, errorCode: error.code },
+        details: { error: error.message, errorCode: error.code, ...error.details },
         context: auditContext(context)
       });
       return this.failure(error, audit);
@@ -183,7 +211,11 @@ export class LunaCore {
         approvalMode: policy.approvalEnabled ? "approval-required" : "observe-only",
         approvalAvailable: true,
         approvalTimeoutSeconds: policy.approvalTimeoutSeconds,
-        protectedTools: policy.protectedTools
+        protectedTools: policy.protectedTools,
+        checkpointBackend: this.checkpoints.backend,
+        maxCheckpoints: this.limits.maxCheckpoints,
+        maxCheckpointFiles: this.limits.maxCheckpointFiles,
+        maxCheckpointBytes: this.limits.maxCheckpointBytes
       },
       permissions: this.policy.permissionRows(),
       approval: {

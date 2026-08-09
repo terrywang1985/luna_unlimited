@@ -185,6 +185,10 @@ MCP_MAX_COMMAND_OUTPUT_BYTES=262144
 | `MCP_MAX_FILE_BYTES` | 单文件上限 | 1 MiB |
 | `MCP_MAX_BATCH_BYTES` | 一次原子批量写入上限 | 8 MiB |
 | `MCP_MAX_COMMAND_OUTPUT_BYTES` | stdout/stderr 单项保留上限 | 256 KiB |
+| `MCP_MAX_CHECKPOINT_FILES` | 单个恢复点最多文件/目录数 | 5000 |
+| `MCP_MAX_CHECKPOINT_BYTES` | 单个恢复点内容上限 | 128 MiB |
+| `MCP_MAX_CHECKPOINTS` | 每个 workspace 最多恢复点 | 20 |
+| `LUNA_STATE_DIR` | 可选私有状态目录，必须在 workspace 外 | 系统用户状态目录 |
 
 ## 8. 选择安全的 Workspace 并启动
 
@@ -256,7 +260,7 @@ Dashboard: http://127.0.0.1:18765/admin
 
 ![创建 Tunnel 类型的 ChatGPT 插件](images/4_create_plugin/3_plugins_create.jpg)
 
-如果插件扫描后没有看到 11 个工具，先确认本机 MCP/Tunnel Ready，然后删除或刷新开发插件并新开一个对话。工具目录在已有会话里可能被缓存。
+如果插件扫描后没有看到 15 个工具，先确认本机 MCP/Tunnel Ready，然后删除或刷新开发插件并新开一个对话。工具目录在已有会话里可能被缓存。
 
 ## 11. 在网页中使用 Luna
 
@@ -313,6 +317,25 @@ exec_command(test/build/lint/typecheck)
 
 大文件或只需要局部上下文时继续使用 `read_text_file_range`，单次最多读取 1000 行。
 
+### 大规模修改前先创建恢复点
+
+在重构或批量生成文件前调用：
+
+```text
+create_checkpoint(label="before-auth-refactor")
+```
+
+恢复点使用非 Git `local-snapshot` 后端，因此空目录、未初始化 Git 的项目同样可用。若方向错误：
+
+```text
+list_checkpoints()
+restore_checkpoint(checkpoint_id="cp_...")
+```
+
+恢复会还原快照内文件并删除之后新增的普通文件；`.git`、`.env` 等敏感路径、`node_modules` 和 Luna 运行日志被明确排除并原样保留。恢复取得 workspace 独占写锁，失败时自动回到恢复操作开始前的状态。确认不再需要后可用 `delete_checkpoint` 删除私有快照。
+
+快照内容依赖操作系统当前用户的私有目录权限，不额外加密；共享系统账号或高敏源码环境应自行加密磁盘，并及时删除不再需要的恢复点。
+
 ### 为什么已有文件必须先 `stat_path`
 
 `stat_path` 返回 SHA-256 revision。`write_files` 更新已有文件时必须携带该值。如果用户或另一个 Agent 已经改过文件，写入会得到 `FILE_CHANGED`，Agent 必须重新读取，而不是覆盖新版本。
@@ -338,7 +361,7 @@ Dashboard 可以查看：
 - MCP 是否 Ready；
 - Tunnel 是否 Ready；
 - 当前授权 workspace；
-- 11 个工具的启用状态；
+- 15 个工具的启用状态；
 - 待审批操作；
 - 最近读写、执行、拒绝和错误日志。
 
@@ -347,6 +370,9 @@ Dashboard 可以查看：
 - `write_text_file`
 - `replace_text`
 - `write_files`
+- `create_checkpoint`
+- `restore_checkpoint`
+- `delete_checkpoint`
 - `exec_command`
 - `install_dependencies`
 
@@ -387,7 +413,6 @@ Dashboard 可以查看：
 - arbitrary Python/Rust/.NET/CMake 命令；
 - move/delete 和通用 unified diff patch；
 - Git push、force push、reset 或凭据操作；
-- 非 Git checkpoint/undo；
 - 长期后台进程和浏览器自动测试；
 - 持久化本地 policy。
 
@@ -470,7 +495,7 @@ npm run test:admin
 npm run test:workspace
 ```
 
-完整测试覆盖旧 7 个工具 contract、路径和敏感文件、权限、审批、审计、SHA-256 冲突、多文件事务、npm lifecycle scripts 以及生成工程自身的测试。
+完整测试覆盖旧 7 个工具 contract、路径和敏感文件、权限、审批、审计、SHA-256 冲突、多文件事务、npm lifecycle scripts、非 Git checkpoint 的完整恢复/失败回滚/损坏拒绝，以及生成工程自身的测试。
 
 ## 18. 官方资料
 

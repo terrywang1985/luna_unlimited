@@ -22,6 +22,10 @@ try {
     "write_text_file",
     "replace_text",
     "write_files",
+    "create_checkpoint",
+    "list_checkpoints",
+    "restore_checkpoint",
+    "delete_checkpoint",
     "exec_command",
     "install_dependencies"
   ]) {

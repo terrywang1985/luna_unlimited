@@ -91,6 +91,8 @@ write conflict protection
 create/move/delete
 ```
 
+当前 v0.4.0 已按用户明确优先级提前完成非 Git checkpoint/restore。不要重复实现 checkpoint；下一项继续推进 atomic `apply_patch`，然后是 create/move/protected delete。
+
 ## 架构硬约束
 
 推荐目录：
@@ -226,6 +228,8 @@ Checkpoint Core 必须抽象后端，至少允许：
 - local snapshot / copy-on-write 类后端。
 
 Git 只是可选实现，不是 checkpoint API 的前提。
+
+当前 `local-snapshot` backend 的既有 contract 还要求：私有存储位于 workspace 外；敏感路径、`.git`、`node_modules` 和 Luna runtime logs 不进入快照；restore 取得 workspace 独占 mutation gate；失败必须回滚并在 audit 标记 `rolledBack`。
 
 ## Vendor-neutral 文案
 

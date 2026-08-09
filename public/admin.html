@@ -210,7 +210,7 @@
         <div class="mark">L</div>
         <div>
           <h1>Luna Local · MCP 观察台</h1>
-          <p class="subtitle">本地文件工具的权限、健康状态与操作审计</p>
+          <p class="subtitle">本地 Agent 能力的权限、恢复、健康状态与操作审计</p>
         </div>
       </div>
       <div class="header-actions">
@@ -339,7 +339,9 @@
         <div class="policy-row"><dt>最大文件</dt><dd>${formatBytes(data.policy.maxFileBytes)}</dd></div>
         <div class="policy-row"><dt>绝对路径</dt><dd>${data.policy.absolutePaths ? "允许" : "拒绝"}</dd></div>
         <div class="policy-row"><dt>符号链接</dt><dd>${data.policy.symbolicLinks ? "允许" : "拒绝"}</dd></div>
-        <div class="policy-row"><dt>审批模式</dt><dd>${data.approval.enabled ? `写入、替换和命令需在 ${data.approval.timeoutSeconds} 秒内审批` : "观察模式（不阻塞操作）"}</dd></div>`;
+        <div class="policy-row"><dt>恢复后端</dt><dd>${escapeHtml(data.policy.checkpointBackend)}</dd></div>
+        <div class="policy-row"><dt>恢复点上限</dt><dd>${escapeHtml(data.policy.maxCheckpoints)} 个 · 单点 ${formatBytes(data.policy.maxCheckpointBytes)}</dd></div>
+        <div class="policy-row"><dt>审批模式</dt><dd>${data.approval.enabled ? `受保护的写入、恢复和命令需在 ${data.approval.timeoutSeconds} 秒内审批` : "观察模式（不阻塞操作）"}</dd></div>`;
     }
 
     function renderApprovals() {
@@ -356,7 +358,7 @@
                 <button class="button deny" type="button" data-approval-id="${escapeHtml(approval.id)}" data-decision="deny">拒绝</button>
               </div>
             </div>`).join("")}</div>`
-        : `<p>${approvals.enabled ? "当前没有等待处理的请求。" : "启用后，整文件写入、局部替换和命令执行会先在这里等待你的决定。"}</p>`;
+        : `<p>${approvals.enabled ? "当前没有等待处理的请求。" : "启用后，受保护的写入、恢复、删除恢复点和命令执行会先在这里等待你的决定。"}</p>`;
 
       $("approvalPanel").innerHTML = `
         <div class="approval">

@@ -1,4 +1,5 @@
 import path from "node:path";
+import os from "node:os";
 import { fileURLToPath } from "node:url";
 
 import { registerAdminRoutes } from "./adapters/http-admin.mjs";
@@ -13,6 +14,14 @@ const host = process.env.MCP_HOST || "127.0.0.1";
 const maxFileBytes = Number.parseInt(process.env.MCP_MAX_FILE_BYTES || String(1024 * 1024), 10);
 const maxBatchBytes = Number.parseInt(process.env.MCP_MAX_BATCH_BYTES || String(8 * 1024 * 1024), 10);
 const maxCommandOutputBytes = Number.parseInt(process.env.MCP_MAX_COMMAND_OUTPUT_BYTES || String(256 * 1024), 10);
+const maxCheckpointFiles = Number.parseInt(process.env.MCP_MAX_CHECKPOINT_FILES || "5000", 10);
+const maxCheckpointBytes = Number.parseInt(process.env.MCP_MAX_CHECKPOINT_BYTES || String(128 * 1024 * 1024), 10);
+const maxCheckpoints = Number.parseInt(process.env.MCP_MAX_CHECKPOINTS || "20", 10);
+const defaultStateDir = process.platform === "win32"
+  ? path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local"), "LunaUnlimited")
+  : path.join(process.env.XDG_STATE_HOME || path.join(os.homedir(), ".local", "state"), "luna-unlimited");
+const stateDir = path.resolve(process.env.LUNA_STATE_DIR || defaultStateDir);
+const checkpointRoot = path.join(stateDir, "checkpoints");
 const logsDir = path.join(projectDir, "logs");
 const adminPagePath = path.join(projectDir, "public", "admin.html");
 const startedAt = new Date();
@@ -29,13 +38,26 @@ if (!Number.isInteger(maxBatchBytes) || maxBatchBytes < maxFileBytes) {
 if (!Number.isInteger(maxCommandOutputBytes) || maxCommandOutputBytes < 1024) {
   throw new Error("MCP_MAX_COMMAND_OUTPUT_BYTES must be at least 1024");
 }
+if (!Number.isInteger(maxCheckpointFiles) || maxCheckpointFiles < 1) {
+  throw new Error("MCP_MAX_CHECKPOINT_FILES must be a positive integer");
+}
+if (!Number.isInteger(maxCheckpointBytes) || maxCheckpointBytes < maxFileBytes) {
+  throw new Error("MCP_MAX_CHECKPOINT_BYTES must be at least MCP_MAX_FILE_BYTES");
+}
+if (!Number.isInteger(maxCheckpoints) || maxCheckpoints < 1 || maxCheckpoints > 1000) {
+  throw new Error("MCP_MAX_CHECKPOINTS must be between 1 and 1000");
+}
 
 const core = await createLunaCore({
   workspaceRoot,
   logsDir,
   maxFileBytes,
   maxBatchBytes,
-  maxCommandOutputBytes
+  maxCommandOutputBytes,
+  checkpointRoot,
+  maxCheckpointFiles,
+  maxCheckpointBytes,
+  maxCheckpoints
 });
 const app = createMcpApp({ host, core });
 registerAdminRoutes(app, { core, adminPagePath, logsDir, host, port, startedAt });

@@ -15,7 +15,7 @@ function toMcpResult(result) {
 
 function createMcpServer(core, context) {
   const server = new McpServer(
-    { name: "luna-unlimited", version: "0.3.2" },
+    { name: "luna-unlimited", version: "0.4.0" },
     {
       instructions:
         "Use these tools only inside the configured workspace. Call get_capabilities first. Use stat_path before overwriting an existing file, then pass its sha256 to write_files. Prefer write_files for reliable multi-file project creation. Run npm and Go commands from the directory that directly contains package.json or go.mod; parent project discovery is blocked."
@@ -181,6 +181,120 @@ function createMcpServer(core, context) {
       },
       context,
       `Create or safely update ${files.length} file(s)`
+    ))
+  );
+
+  server.registerTool(
+    "create_checkpoint",
+    {
+      title: "Create workspace checkpoint",
+      description:
+        "Create a non-Git local snapshot of the authorized workspace before a risky edit. Sensitive paths, .git internals, and node_modules are excluded. Snapshot storage stays outside the workspace.",
+      inputSchema: {
+        label: z.string().max(120).optional().describe("Optional human-readable checkpoint label")
+      },
+      outputSchema: {
+        id: z.string(),
+        label: z.string().nullable(),
+        createdAt: z.string(),
+        backend: z.literal("local-snapshot"),
+        files: z.number().int().nonnegative(),
+        directories: z.number().int().nonnegative(),
+        bytes: z.number().int().nonnegative(),
+        excluded: z.object({
+          sensitive: z.number().int().nonnegative(),
+          dependencies: z.number().int().nonnegative(),
+          runtime: z.number().int().nonnegative(),
+          other: z.number().int().nonnegative()
+        })
+      }
+    },
+    async ({ label }) => toMcpResult(await core.execute(
+      "create_checkpoint",
+      { label },
+      context,
+      `Create a local workspace checkpoint${label ? `: ${label}` : ""}`
+    ))
+  );
+
+  server.registerTool(
+    "list_checkpoints",
+    {
+      title: "List workspace checkpoints",
+      description: "List safe metadata for checkpoints belonging to the current authorized workspace.",
+      inputSchema: {},
+      outputSchema: {
+        checkpoints: z.array(z.object({
+          id: z.string(),
+          label: z.string().nullable(),
+          createdAt: z.string(),
+          backend: z.literal("local-snapshot"),
+          files: z.number().int().nonnegative(),
+          directories: z.number().int().nonnegative(),
+          bytes: z.number().int().nonnegative(),
+          excluded: z.object({
+            sensitive: z.number().int().nonnegative(),
+            dependencies: z.number().int().nonnegative(),
+            runtime: z.number().int().nonnegative(),
+            other: z.number().int().nonnegative()
+          })
+        })),
+        total: z.number().int().nonnegative(),
+        invalid: z.number().int().nonnegative()
+      }
+    },
+    async () => toMcpResult(await core.execute("list_checkpoints", {}, context))
+  );
+
+  server.registerTool(
+    "restore_checkpoint",
+    {
+      title: "Restore workspace checkpoint",
+      description:
+        "Transactionally restore the authorized workspace to a local snapshot. New managed files are removed; sensitive paths and node_modules are preserved. A failed restore rolls back to the pre-restore state.",
+      inputSchema: {
+        checkpoint_id: z.string().regex(/^cp_\d{8}T\d{6}Z_[a-f0-9]{8}$/)
+      },
+      outputSchema: {
+        id: z.string(),
+        label: z.string().nullable(),
+        restoredAt: z.string(),
+        backend: z.literal("local-snapshot"),
+        writtenFiles: z.number().int().nonnegative(),
+        deletedFiles: z.number().int().nonnegative(),
+        removedDirectories: z.number().int().nonnegative(),
+        files: z.number().int().nonnegative(),
+        bytes: z.number().int().nonnegative(),
+        rolledBack: z.boolean()
+      }
+    },
+    async ({ checkpoint_id }) => toMcpResult(await core.execute(
+      "restore_checkpoint",
+      { checkpointId: checkpoint_id },
+      context,
+      `Restore workspace checkpoint ${checkpoint_id}; managed files created later may be removed`
+    ))
+  );
+
+  server.registerTool(
+    "delete_checkpoint",
+    {
+      title: "Delete workspace checkpoint",
+      description: "Permanently delete one private checkpoint for the current workspace. This does not modify workspace files.",
+      inputSchema: {
+        checkpoint_id: z.string().regex(/^cp_\d{8}T\d{6}Z_[a-f0-9]{8}$/)
+      },
+      outputSchema: {
+        id: z.string(),
+        label: z.string().nullable(),
+        deleted: z.boolean()
+      }
+    },
+    async ({ checkpoint_id }) => toMcpResult(await core.execute(
+      "delete_checkpoint",
+      { checkpointId: checkpoint_id },
+      context,
+      `Permanently delete private checkpoint ${checkpoint_id}`
     ))
   );
 

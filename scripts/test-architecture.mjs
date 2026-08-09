@@ -29,11 +29,13 @@ for (const modulePath of coreModules) {
 const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "luna-core-architecture-"));
 const workspaceRoot = path.join(temporaryRoot, "workspace");
 const logsDir = path.join(temporaryRoot, "logs");
+const checkpointRoot = path.join(temporaryRoot, "checkpoints");
 
 try {
   const core = await createLunaCore({
     workspaceRoot,
     logsDir,
+    checkpointRoot,
     maxFileBytes: 1024 * 1024,
     maxCommandOutputBytes: 256 * 1024
   });
@@ -94,6 +96,27 @@ try {
   ]);
   if (order.join(",") !== "first-start,first-end,second-start,second-end") {
     throw new Error(`Per-file mutation queue did not serialize writes: ${order.join(",")}`);
+  }
+
+  const gateOrder = [];
+  await Promise.all([
+    core.mutations.run(path.join(workspaceRoot, "gate-a.txt"), async () => {
+      gateOrder.push("shared-start");
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      gateOrder.push("shared-end");
+    }),
+    new Promise((resolve) => setTimeout(resolve, 5)).then(() => core.mutations.runExclusive(async () => {
+      gateOrder.push("exclusive-start");
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      gateOrder.push("exclusive-end");
+    })),
+    new Promise((resolve) => setTimeout(resolve, 10)).then(() => core.mutations.run(
+      path.join(workspaceRoot, "gate-b.txt"),
+      async () => gateOrder.push("queued-shared")
+    ))
+  ]);
+  if (gateOrder.join(",") !== "shared-start,shared-end,exclusive-start,exclusive-end,queued-shared") {
+    throw new Error(`Workspace exclusive mutation gate ordering failed: ${gateOrder.join(",")}`);
   }
 
   const traversal = await core.execute("read_text_file", { path: "../outside.txt" }, context);
@@ -217,6 +240,7 @@ try {
   console.log("PASS: caller and work-session metadata are audit-only context");
   console.log("PASS: content hashes reject stale edits and multi-file writes commit atomically");
   console.log("PASS: per-file mutation queues serialize concurrent writers");
+  console.log("PASS: checkpoint operations acquire a fair workspace-exclusive mutation gate");
   console.log("PASS: file search ignores repository rules above the authorized workspace");
   console.log("PASS: Git, npm, and Go cannot discover projects above the authorized workspace");
   console.log("PASS: workspace-local Git and npm projects remain executable");

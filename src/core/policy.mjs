@@ -8,6 +8,10 @@ export const TOOL_DEFINITIONS = Object.freeze([
   { name: "write_text_file", label: "整文件写入", level: "write" },
   { name: "replace_text", label: "局部替换", level: "write" },
   { name: "write_files", label: "安全批量写入", level: "write" },
+  { name: "create_checkpoint", label: "创建恢复点", level: "write" },
+  { name: "list_checkpoints", label: "查看恢复点", level: "read" },
+  { name: "restore_checkpoint", label: "恢复工作区", level: "write" },
+  { name: "delete_checkpoint", label: "删除恢复点", level: "write" },
   { name: "exec_command", label: "执行命令", level: "execute" },
   { name: "install_dependencies", label: "安装项目依赖", level: "execute" }
 ]);
@@ -16,6 +20,9 @@ export const PROTECTED_TOOLS = Object.freeze([
   "write_text_file",
   "replace_text",
   "write_files",
+  "create_checkpoint",
+  "restore_checkpoint",
+  "delete_checkpoint",
   "exec_command",
   "install_dependencies"
 ]);

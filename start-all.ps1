@@ -68,7 +68,7 @@ $localBaseUrl = "http://127.0.0.1:$mcpPort"
 $dashboardUrl = "$localBaseUrl/admin"
 
 foreach ($entry in $configuration.GetEnumerator()) {
-    if ($entry.Key -like "MCP_*") {
+    if ($entry.Key -like "MCP_*" -or $entry.Key -like "LUNA_*") {
         [Environment]::SetEnvironmentVariable($entry.Key, $entry.Value, "Process")
     }
 }
