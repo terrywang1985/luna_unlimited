@@ -22,6 +22,7 @@ try {
     "write_text_file",
     "replace_text",
     "write_files",
+    "apply_patch",
     "create_checkpoint",
     "list_checkpoints",
     "restore_checkpoint",

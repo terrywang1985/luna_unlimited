@@ -10,6 +10,7 @@ import { auditContext, createWorkSessionContext } from "./context.mjs";
 import { CoreErrorCode, coreError, normalizeCoreError } from "./errors.mjs";
 import { FileService } from "./files.mjs";
 import { FileMutationQueue } from "./mutation-queue.mjs";
+import { PatchService } from "./patch.mjs";
 import { PolicyService } from "./policy.mjs";
 import { SearchService } from "./search.mjs";
 import { WorkspaceService } from "./workspace.mjs";
@@ -48,6 +49,12 @@ export class LunaCore {
       maxCommandOutputBytes
     });
     this.search = new SearchService({ workspace: this.workspace, maxCommandOutputBytes });
+    this.patch = new PatchService({
+      workspace: this.workspace,
+      mutations: this.mutations,
+      maxFileBytes,
+      maxBatchBytes
+    });
     this.commands = new CommandService({ workspace: this.workspace, mutations: this.mutations, maxCommandOutputBytes });
     this.checkpoints = new CheckpointService({
       workspace: this.workspace,
@@ -69,6 +76,7 @@ export class LunaCore {
       write_text_file: (request) => this.files.writeTextFile(request),
       replace_text: (request) => this.files.replaceText(request),
       write_files: (request) => this.files.writeFiles(request),
+      apply_patch: (request) => this.patch.apply(request),
       create_checkpoint: (request) => this.checkpoints.create(request),
       list_checkpoints: () => this.checkpoints.list(),
       restore_checkpoint: (request) => this.checkpoints.restore(request),
@@ -103,6 +111,7 @@ export class LunaCore {
       ?? request.cwd
       ?? request.checkpointId
       ?? request.label
+      ?? (Array.isArray(request.expectedFiles) ? request.expectedFiles.map((file) => file.path).join(", ").slice(0, 500) : undefined)
       ?? (Array.isArray(request.files) ? request.files.map((file) => file.path).join(", ").slice(0, 500) : ".");
     const handler = this.toolHandlers[tool];
     if (!handler) {

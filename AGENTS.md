@@ -91,7 +91,7 @@ write conflict protection
 create/move/delete
 ```
 
-当前 v0.4.0 已按用户明确优先级提前完成非 Git checkpoint/restore。不要重复实现 checkpoint；下一项继续推进 atomic `apply_patch`，然后是 create/move/protected delete。
+当前 v0.4.0 已按用户明确优先级提前完成非 Git checkpoint/restore，v0.5.0 已完成 atomic `apply_patch`。不要重复实现这两项；下一项继续推进 create/move/protected delete。
 
 ## 架构硬约束
 

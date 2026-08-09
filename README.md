@@ -34,6 +34,7 @@ flowchart LR
 - 获取 SHA-256 文件 revision，避免多个 Agent 互相覆盖；
 - 原子创建或更新最多 50 个文件，失败时回滚；
 - 创建、列出、恢复和删除非 Git 本地恢复点，恢复失败自动回滚；
+- 使用 unified diff 原子修改、创建或删除最多 50 个文件，强制 SHA-256 并发保护并支持 dry-run；
 - 受控安装 npm 依赖，强制禁用 lifecycle scripts；
 - 运行白名单内的 Git、Go、npm build/test/lint/typecheck 命令；
 - 命令侧项目发现不会越过授权 workspace：Git 仓库、npm manifest 和 Go module 必须位于授权边界内；
@@ -41,13 +42,13 @@ flowchart LR
 - 在本机 Dashboard 查看权限、运行状态、审批队列和审计日志；
 - 拒绝绝对路径、`..`、符号链接逃逸、`.env`、私钥和常见凭据文件。
 
-当前版本提供 15 个 MCP 工具：
+当前版本提供 16 个 MCP 工具：
 
 | 分类 | 工具 |
 | --- | --- |
 | 能力发现 | `get_capabilities` |
 | 浏览与读取 | `list_directory`, `stat_path`, `read_text_file`, `read_text_file_range`, `search_files` |
-| 写入 | `write_text_file`, `replace_text`, `write_files` |
+| 写入 | `write_text_file`, `replace_text`, `write_files`, `apply_patch` |
 | 恢复 | `create_checkpoint`, `list_checkpoints`, `restore_checkpoint`, `delete_checkpoint` |
 | 执行 | `exec_command`, `install_dependencies` |
 
@@ -76,7 +77,7 @@ New-Item -ItemType Directory -Force "C:\luna-workspaces\my-project"
 
 ```text
 请使用 luna-unlimited。先调用 get_capabilities，然后在当前 workspace 中创建一个带测试的 Node.js 项目；
-已有文件必须先 stat/read，批量文件优先使用 write_files，安装依赖后运行测试并修复到通过。
+已有文件必须先 stat/read；创建完整文件优先使用 write_files，修改代码优先使用带 revision 的 apply_patch；安装依赖后运行测试并修复到通过。
 ```
 
 完整的账号配置、截图、启动说明、调用流程、安全模型、项目示例和故障排查见：
@@ -143,6 +144,8 @@ New-Item -ItemType Directory -Force "C:\luna-workspaces\my-project"
 
 v0.4.0 提供与 Git 解耦的 `local-snapshot` 恢复后端。快照保存在 workspace 之外的 Luna 私有状态目录，默认最多 20 个；`.git`、敏感凭据、`node_modules` 和 Luna 自己的运行日志不进入快照，恢复时也不会触碰。`restore_checkpoint` 与 `delete_checkpoint` 属于审批保护操作。快照依赖操作系统用户目录权限，不额外加密。
 
+v0.5.0 提供事务化 `apply_patch`。它接受标准 unified diff，可在一次调用中创建、修改和删除最多 50 个 UTF-8 文本文件。每个触及路径都必须声明当前预期状态：已有文件传 `stat_path` 返回的 SHA-256，新文件传 `null`。Core 会在同一组文件锁内完成全部路径、revision、context 和大小校验，先在内存生成所有结果，再提交；提交中途失败会恢复已写入文件。`dry_run=true` 执行相同校验但不落盘。审计只记录路径、行数、阶段和 hash，不保存 patch 正文。当前版本对缺少末尾换行的文件 fail closed。
+
 ## 开发与验证
 
 ```powershell
@@ -150,6 +153,7 @@ npm test
 npm run test:mcp
 npm run test:admin
 npm run test:workspace
+npm run test:patch
 ```
 
 架构说明和后续能力见 [AGENT_CAPABILITIES_ROADMAP.md](AGENT_CAPABILITIES_ROADMAP.md)。

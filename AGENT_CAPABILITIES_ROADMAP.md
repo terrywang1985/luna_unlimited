@@ -142,7 +142,7 @@ get_capabilities()
 {
   "server": {
     "name": "luna-unlimited",
-    "version": "0.4.0"
+    "version": "0.5.0"
   },
   "protocol": {
     "adapter": "mcp",
@@ -192,7 +192,7 @@ Agent 每次新连接都可以先探测能力，而不是依赖模型记忆。
 
 # 2. 当前能力
 
-当前 v0.4.0 已有 15 个 MCP Tools。原有 7 个 Tool 保持 Stage 0 contract 兼容，另有 4 个可靠工程原语和 4 个本地恢复原语：
+当前 v0.5.0 已有 16 个 MCP Tools。原有 7 个 Tool 保持 Stage 0 contract 兼容，另有 5 个可靠工程原语和 4 个本地恢复原语：
 
 ```text
 get_capabilities
@@ -204,6 +204,7 @@ search_files
 write_text_file
 replace_text
 write_files
+apply_patch
 create_checkpoint
 list_checkpoints
 restore_checkpoint
@@ -233,16 +234,17 @@ install_dependencies
 - local dashboard。
 - 非 Git `local-snapshot` checkpoint backend，私有存储位于 workspace 外；
 - restore 使用 workspace 独占锁，失败回滚；
+- unified diff 支持 dry-run 与多文件事务提交，每个触及路径强制声明 SHA-256 或新文件 `null` 预期；
 
 当前已经可以做到：
 
 ```text
-discover → inspect/hash → search/read → atomic batch write → install → build/test
+discover → inspect/hash → search/read → atomic batch write/patch → install → build/test
 ```
 
 本轮已补齐中等规模工程创建最关键的可靠性底座：安全 capability discovery、已有文件 SHA-256 冲突保护、进程内 per-file mutation queue、整批验证与失败回滚、禁止 npm lifecycle scripts 的受控依赖安装，以及命令侧不越过 workspace 的项目发现边界。
 
-尚未完成的完整 Coding Agent 能力包括 `apply_patch`、create/move/delete、policy persistence、长进程和结构化 diagnostics。它们仍按后续 Milestone 推进，不应把 v0.4.0 宣称为完整 Coding Agent Runtime。
+尚未完成的完整 Coding Agent 能力包括 create/move/delete、policy persistence、长进程和结构化 diagnostics。它们仍按后续 Milestone 推进，不应把 v0.5.0 宣称为完整 Coding Agent Runtime。
 
 ---
 

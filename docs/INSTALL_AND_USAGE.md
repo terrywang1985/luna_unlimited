@@ -260,7 +260,7 @@ Dashboard: http://127.0.0.1:18765/admin
 
 ![创建 Tunnel 类型的 ChatGPT 插件](images/4_create_plugin/3_plugins_create.jpg)
 
-如果插件扫描后没有看到 15 个工具，先确认本机 MCP/Tunnel Ready，然后删除或刷新开发插件并新开一个对话。工具目录在已有会话里可能被缓存。
+如果插件扫描后没有看到 16 个工具，先确认本机 MCP/Tunnel Ready，然后删除或刷新开发插件并新开一个对话。工具目录在已有会话里可能被缓存。
 
 ## 11. 在网页中使用 Luna
 
@@ -281,7 +281,7 @@ Dashboard: http://127.0.0.1:18765/admin
 1. 先调用 get_capabilities，确认工具和限制；
 2. 先列目录；已有文件必须 stat/read 后再修改；
 3. 给出目录结构和实现计划；
-4. 一组相关文件优先使用 write_files 原子提交；
+4. 新建完整文件优先使用 write_files；修改已有代码优先使用带 SHA-256 预期的 apply_patch；
 5. 创建 package.json、源码、测试、README 和必要配置；
 6. 使用 install_dependencies 安装声明的 npm 依赖；
 7. 使用 exec_command 运行 lint/typecheck/test/build 中项目实际提供的命令；
@@ -302,7 +302,7 @@ list/search/stat/read
     ↓
 制定目录结构与文件批次
     ↓
-write_files(expected_sha256)
+write_files(expected_sha256) / apply_patch(expected_files, dry_run)
     ↓
 install_dependencies
     ↓
@@ -344,6 +344,21 @@ restore_checkpoint(checkpoint_id="cp_...")
 
 创建工程通常涉及 `package.json`、源码、测试和配置。`write_files` 会先验证整批路径、敏感规则、文件大小和 revision，再进入 commit；任一步失败会回滚已经提交的文件，避免出现“写了一半的工程”。
 
+### 为什么修改代码优先使用 `apply_patch`
+
+`apply_patch` 接受统一的 unified diff，一次最多触及 50 个文件，并支持创建、修改和删除。每个路径都必须出现在 `expected_files`：已有文件填写刚由 `stat_path` 获得的 SHA-256，新文件填写 `null`。建议先使用 `dry_run=true`，确认 context、revision、路径和大小全部通过，再用相同 patch 正式提交。
+
+```text
+stat_path("src/app.mjs")
+apply_patch(
+  patch="--- a/src/app.mjs ...",
+  expected_files=[{"path":"src/app.mjs","sha256":"<stat 返回值>"}],
+  dry_run=true
+)
+```
+
+Core 在文件锁内先解析整份 diff，并在内存中生成全部目标内容；只有全部验证通过才写盘。提交过程中任一文件失败，会恢复此前已经变更的文件。审计事件用 `validation`、`dry_run`、`committed`、`rollback` 区分阶段，但不保存 diff 正文。v0.5.0 暂不支持 binary patch、rename/copy patch、quoted Git path，以及缺少末尾换行的文本文件；这些情况会明确失败，不会部分提交。
+
 ### 依赖安装为什么单独提供工具
 
 任意 shell 权限过大。`install_dependencies` 当前只接受 npm，强制公共 registry，并关闭 lifecycle scripts、audit 和 fund hook。网络下载第三方包仍有供应链风险，因此它是受保护工具。
@@ -361,7 +376,7 @@ Dashboard 可以查看：
 - MCP 是否 Ready；
 - Tunnel 是否 Ready；
 - 当前授权 workspace；
-- 15 个工具的启用状态；
+- 16 个工具的启用状态；
 - 待审批操作；
 - 最近读写、执行、拒绝和错误日志。
 
@@ -370,6 +385,7 @@ Dashboard 可以查看：
 - `write_text_file`
 - `replace_text`
 - `write_files`
+- `apply_patch`
 - `create_checkpoint`
 - `restore_checkpoint`
 - `delete_checkpoint`
@@ -493,9 +509,10 @@ npm test
 npm run test:mcp
 npm run test:admin
 npm run test:workspace
+npm run test:patch
 ```
 
-完整测试覆盖旧 7 个工具 contract、路径和敏感文件、权限、审批、审计、SHA-256 冲突、多文件事务、npm lifecycle scripts、非 Git checkpoint 的完整恢复/失败回滚/损坏拒绝，以及生成工程自身的测试。
+完整测试覆盖旧 7 个工具 contract、路径和敏感文件、权限、审批、审计、SHA-256 冲突、多文件事务、atomic unified diff 的 dry-run/提交/失败回滚、npm lifecycle scripts、非 Git checkpoint 的完整恢复/失败回滚/损坏拒绝，以及生成工程自身的测试。
 
 ## 18. 官方资料
 

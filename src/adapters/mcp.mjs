@@ -15,10 +15,10 @@ function toMcpResult(result) {
 
 function createMcpServer(core, context) {
   const server = new McpServer(
-    { name: "luna-unlimited", version: "0.4.0" },
+    { name: "luna-unlimited", version: "0.5.0" },
     {
       instructions:
-        "Use these tools only inside the configured workspace. Call get_capabilities first. Use stat_path before overwriting an existing file, then pass its sha256 to write_files. Prefer write_files for reliable multi-file project creation. Run npm and Go commands from the directory that directly contains package.json or go.mod; parent project discovery is blocked."
+        "Use these tools only inside the configured workspace. Call get_capabilities first. Use stat_path before changing an existing file. Prefer apply_patch with an explicit SHA-256 or null expectation for every touched path when editing code, and write_files for complete-file project creation. Run npm and Go commands from the directory that directly contains package.json or go.mod; parent project discovery is blocked."
     }
   );
 
@@ -181,6 +181,54 @@ function createMcpServer(core, context) {
       },
       context,
       `Create or safely update ${files.length} file(s)`
+    ))
+  );
+
+  server.registerTool(
+    "apply_patch",
+    {
+      title: "Apply an atomic unified diff",
+      description:
+        "Dry-run or atomically apply a multi-file unified diff. Every touched path requires an expected_files entry: use the current stat_path SHA-256 for an existing file, or null for a new file. All paths, revisions, and hunk contexts are validated before commit; a commit failure rolls back earlier changes.",
+      inputSchema: {
+        patch: z.string().min(1).describe("Unified diff with ---/+++ headers and @@ hunks; supports create, update, and delete"),
+        expected_files: z.array(z.object({
+          path: z.string().min(1).describe("Touched path relative to the MCP workspace"),
+          sha256: z.string().regex(/^[a-f0-9]{64}$/i).nullable()
+            .describe("Current SHA-256 for an existing file, or null only when the path must be new")
+        })).min(1).max(50),
+        dry_run: z.boolean().default(false).describe("Validate and preview without changing the workspace")
+      },
+      outputSchema: {
+        dryRun: z.boolean(),
+        committed: z.boolean(),
+        rolledBack: z.boolean(),
+        files: z.array(z.object({
+          path: z.string(),
+          action: z.enum(["created", "updated", "deleted"]),
+          beforeSha256: z.string().nullable(),
+          afterSha256: z.string().nullable(),
+          bytes: z.number().int().nonnegative(),
+          addedLines: z.number().int().nonnegative(),
+          removedLines: z.number().int().nonnegative()
+        })),
+        totals: z.object({
+          files: z.number().int().nonnegative(),
+          bytes: z.number().int().nonnegative(),
+          addedLines: z.number().int().nonnegative(),
+          removedLines: z.number().int().nonnegative()
+        })
+      }
+    },
+    async ({ patch, expected_files, dry_run }) => toMcpResult(await core.execute(
+      "apply_patch",
+      {
+        patch,
+        expectedFiles: expected_files.map((file) => ({ path: file.path, sha256: file.sha256 })),
+        dryRun: dry_run
+      },
+      context,
+      `${dry_run ? "Dry-run" : "Apply"} an atomic unified diff touching ${expected_files.length} file(s)`
     ))
   );
 
