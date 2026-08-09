@@ -43,6 +43,9 @@ try {
 
   const returnedText = readResult.content?.find((item) => item.type === "text")?.text;
   if (returnedText !== marker) throw new Error("Read content did not match written content");
+  if (readResult.structuredContent?.text !== marker) {
+    throw new Error("Structured read result did not include the file text");
+  }
 
   const rangeResult = await client.callTool({
     name: "read_text_file_range",

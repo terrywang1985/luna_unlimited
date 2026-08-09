@@ -30,10 +30,13 @@ flowchart LR
 ## 当前可以做什么
 
 - 浏览、分段读取和搜索工程文件；
+- 完整读取同时返回正文与 SHA-256/mtime 元数据，兼容偏好文本或结构化结果的 Host；
 - 获取 SHA-256 文件 revision，避免多个 Agent 互相覆盖；
 - 原子创建或更新最多 50 个文件，失败时回滚；
 - 受控安装 npm 依赖，强制禁用 lifecycle scripts；
 - 运行白名单内的 Git、Go、npm build/test/lint/typecheck 命令；
+- 命令侧项目发现不会越过授权 workspace：Git 仓库、npm manifest 和 Go module 必须位于授权边界内；
+- 文件搜索不会继承 workspace 父目录仓库的 ignore 规则；
 - 在本机 Dashboard 查看权限、运行状态、审批队列和审计日志；
 - 拒绝绝对路径、`..`、符号链接逃逸、`.env`、私钥和常见凭据文件。
 
@@ -131,6 +134,10 @@ New-Item -ItemType Directory -Force "C:\luna-workspaces\my-project"
 本地审批默认是 `observe-only`，因为 ChatGPT Host 本身会对工具调用进行确认；你也可以在 Dashboard 开启第二层本地审批。写文件、批量写入、执行命令和安装依赖都会进入审计日志。
 
 `npm test` / `npm run build` 会执行 workspace 中的可变项目脚本，它们不是天然安全命令。面对不可信提示或工程时，请开启本地审批并在 Dashboard 检查操作目标。
+
+从 v0.3.1 起，文件搜索不再继承 workspace 父目录的 ignore 规则；Git 不再向 workspace 父目录寻找 `.git`；npm/Go 命令要求所选 `cwd` 直接包含 `package.json`/`go.mod`；同时会过滤可重定向 Git、Node/npm 和 Go 执行行为的继承环境变量。项目本身的脚本仍属于可变代码，不能因此视为低风险。
+
+从 v0.3.2 起，`read_text_file` 在 MCP 可见文本和结构化结果的 `text` 字段中都返回完整正文；结构化结果同时保留 path、bytes、mtime 和 SHA-256。审计日志只记录元数据，不保存正文。
 
 ## 开发与验证
 

@@ -307,6 +307,12 @@ exec_command(test/build/lint/typecheck)
 读取错误 → 重新 stat/read → 修复 → 再测试
 ```
 
+### `read_text_file` 返回什么
+
+`read_text_file` 适合读取上限以内的完整 UTF-8 小文件。v0.3.2 起，正文会同时出现在 MCP 文本内容和结构化结果的 `text` 字段；结构化结果还包含 path、bytes、mtime 与 SHA-256。这样偏好任一种 MCP 返回形式的 Host 都能直接拿到正文。审计只保存元数据，不保存文件内容。
+
+大文件或只需要局部上下文时继续使用 `read_text_file_range`，单次最多读取 1000 行。
+
 ### 为什么已有文件必须先 `stat_path`
 
 `stat_path` 返回 SHA-256 revision。`write_files` 更新已有文件时必须携带该值。如果用户或另一个 Agent 已经改过文件，写入会得到 `FILE_CHANGED`，Agent 必须重新读取，而不是覆盖新版本。
@@ -357,6 +363,11 @@ Dashboard 可以查看：
 - 文件、批次、命令输出和超时限制；
 - 开发命令使用 `program + args[]` 和 `shell=false`；
 - 名称含 key/token/secret/password/cookie/auth/credential 的环境变量不会传给命令；
+- Git 仓库发现止步于 workspace，且会校验 worktree、git dir 和 common dir 都在授权边界内；
+- ripgrep 文件/内容搜索不会读取 workspace 父目录的 ignore 规则；
+- npm/Go 命令要求 `cwd` 直接包含 `package.json`/`go.mod`，不会复用父目录项目；
+- Go build/test 禁用自动 toolchain 下载与模块网络获取，只使用本机 toolchain 和已有 module cache；
+- Git、Node/npm、Go 的项目重定向和执行控制环境变量会被过滤，并由 Core 注入安全值；
 - 写入队列、SHA-256 冲突保护、权限、审批和审计。
 
 ### 用户仍然需要负责

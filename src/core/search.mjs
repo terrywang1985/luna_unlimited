@@ -22,8 +22,8 @@ export class SearchService {
     const directoryArgument = this.workspace.relative(directory);
 
     const args = searchType === "filename"
-      ? ["--files", "--color", "never"]
-      : ["--line-number", "--no-heading", "--color", "never", "--fixed-strings", "--max-columns", "2000"];
+      ? ["--files", "--no-ignore-parent", "--color", "never"]
+      : ["--line-number", "--no-heading", "--no-ignore-parent", "--color", "never", "--fixed-strings", "--max-columns", "2000"];
     if (glob) args.push("-g", glob);
     args.push(
       "-g", "!.git/**",

@@ -1,10 +1,53 @@
 import path from "node:path";
 import { spawn } from "node:child_process";
 
+const BLOCKED_COMMAND_ENVIRONMENT_NAMES = new Set([
+  "AR",
+  "BASH_ENV",
+  "CC",
+  "COMSPEC_OVERRIDE",
+  "CXX",
+  "ENV",
+  "GOENV",
+  "GOFLAGS",
+  "GOMOD",
+  "GOMODCACHE",
+  "GONOPROXY",
+  "GONOSUMDB",
+  "GOPATH",
+  "GOPRIVATE",
+  "GOPROXY",
+  "GOROOT",
+  "GOSUMDB",
+  "GOTOOLCHAIN",
+  "GOTOOLDIR",
+  "GOWORK",
+  "LESS",
+  "LV",
+  "NODE_OPTIONS",
+  "NODE_PATH",
+  "PAGER",
+  "PKG_CONFIG",
+  "PS4",
+  "SHELLOPTS"
+]);
+
+function isBlockedCommandEnvironmentName(name) {
+  const normalized = name.toLocaleUpperCase();
+  if (/(KEY|TOKEN|SECRET|PASSWORD|COOKIE|AUTH|CREDENTIAL)/i.test(normalized)) return true;
+  if (BLOCKED_COMMAND_ENVIRONMENT_NAMES.has(normalized)) return true;
+  if (normalized.startsWith("GIT_")) return true;
+  if (normalized.startsWith("NPM_CONFIG_")) return true;
+  if (normalized.startsWith("NPM_PACKAGE_")) return true;
+  if (normalized.startsWith("CGO_")) return true;
+  if (normalized === "LD_PRELOAD" || normalized.startsWith("DYLD_")) return true;
+  return false;
+}
+
 export function createSafeCommandEnvironment(environment = process.env) {
   const safeEnvironment = {};
   for (const [name, value] of Object.entries(environment)) {
-    if (/(KEY|TOKEN|SECRET|PASSWORD|COOKIE|AUTH|CREDENTIAL)/i.test(name)) continue;
+    if (isBlockedCommandEnvironmentName(name)) continue;
     if (value !== undefined) safeEnvironment[name] = value;
   }
   safeEnvironment.NO_COLOR = "1";

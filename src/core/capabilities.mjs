@@ -13,7 +13,7 @@ export function buildCapabilities({ workspace, policy, limits, adapter = "unknow
   ]));
 
   return {
-    server: { name: "luna-unlimited", version: "0.3.0" },
+    server: { name: "luna-unlimited", version: "0.3.2" },
     protocol: { adapter, version: protocolVersion },
     workspace: { rootName: path.basename(workspace.root), writable: true },
     features: {
@@ -24,6 +24,7 @@ export function buildCapabilities({ workspace, policy, limits, adapter = "unknow
       batchWrite: true,
       exec: true,
       dependencyInstall: true,
+      commandProjectBoundary: true,
       patch: false,
       process: false,
       checkpoint: false

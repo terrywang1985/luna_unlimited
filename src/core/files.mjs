@@ -77,15 +77,17 @@ export class FileService {
     const buffer = await readFile(filePath);
     const content = buffer.toString("utf8");
     if (content.includes("\0")) throw coreError(CoreErrorCode.BINARY_FILE, "Binary files are not supported");
+    const digest = sha256(buffer);
     return {
       text: content,
       structured: {
         path: this.workspace.display(filePath),
+        text: content,
         bytes: info.size,
         mtime: info.mtime.toISOString(),
-        sha256: sha256(buffer)
+        sha256: digest
       },
-      details: { bytes: info.size, sha256: sha256(buffer), mtime: info.mtime.toISOString() }
+      details: { bytes: info.size, sha256: digest, mtime: info.mtime.toISOString() }
     };
   }
 

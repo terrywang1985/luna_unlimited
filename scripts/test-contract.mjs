@@ -110,6 +110,14 @@ try {
 
   const readResult = await client.callTool({ name: "read_text_file", arguments: { path: fixturePath } });
   if (readResult.isError || toolText(readResult) !== marker) throw new Error("read_text_file round-trip contract changed");
+  if (readResult.structuredContent?.text !== marker) {
+    throw new Error("read_text_file structured result lost the file text");
+  }
+  for (const field of ["path", "text", "bytes", "mtime", "sha256"]) {
+    if (!(field in (readResult.structuredContent || {}))) {
+      throw new Error(`read_text_file structured result lost field: ${field}`);
+    }
+  }
 
   const rangeResult = await client.callTool({
     name: "read_text_file_range",

@@ -15,10 +15,10 @@ function toMcpResult(result) {
 
 function createMcpServer(core, context) {
   const server = new McpServer(
-    { name: "luna-unlimited", version: "0.3.0" },
+    { name: "luna-unlimited", version: "0.3.2" },
     {
       instructions:
-        "Use these tools only inside the configured workspace. Call get_capabilities first. Use stat_path before overwriting an existing file, then pass its sha256 to write_files. Prefer write_files for reliable multi-file project creation."
+        "Use these tools only inside the configured workspace. Call get_capabilities first. Use stat_path before overwriting an existing file, then pass its sha256 to write_files. Prefer write_files for reliable multi-file project creation. Run npm and Go commands from the directory that directly contains package.json or go.mod; parent project discovery is blocked."
     }
   );
 
@@ -62,8 +62,16 @@ function createMcpServer(core, context) {
     "read_text_file",
     {
       title: "Read text file",
-      description: `Read a UTF-8 text file inside the local MCP workspace. Files larger than ${core.limits.maxFileBytes} bytes are rejected.`,
-      inputSchema: { path: z.string().min(1).describe("File path relative to the MCP workspace") }
+      description:
+        `Read a UTF-8 text file inside the local MCP workspace. Returns the complete file text plus path, byte count, mtime, and SHA-256 metadata. Files larger than ${core.limits.maxFileBytes} bytes are rejected.`,
+      inputSchema: { path: z.string().min(1).describe("File path relative to the MCP workspace") },
+      outputSchema: {
+        path: z.string(),
+        text: z.string(),
+        bytes: z.number().int().nonnegative(),
+        mtime: z.string(),
+        sha256: z.string().regex(/^[a-f0-9]{64}$/i)
+      }
     },
     async ({ path }) => toMcpResult(await core.execute("read_text_file", { path }, context))
   );
@@ -181,7 +189,7 @@ function createMcpServer(core, context) {
     {
       title: "Execute approved development command",
       description:
-        "Run a non-interactive allowlisted Git, Go, or npm build/test command. Shell syntax, redirection, pipes, and arbitrary programs are not accepted.",
+        "Run a non-interactive allowlisted Git, Go, or npm build/test command inside the authorized workspace project boundary. Shell syntax, redirection, pipes, arbitrary programs, and parent project discovery are not accepted.",
       inputSchema: {
         program: z.enum(["git", "go", "npm"]),
         args: z.array(z.string()).min(1).max(50).describe("Argument array, for example [\"status\", \"--short\"]"),

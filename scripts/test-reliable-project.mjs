@@ -2,7 +2,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
 const endpoint = new URL(process.env.MCP_TEST_URL || "http://127.0.0.1:18765/mcp");
-const client = new Client({ name: "luna-reliable-project-test", version: "0.3.0" });
+const client = new Client({ name: "luna-reliable-project-test", version: "0.3.2" });
 const transport = new StreamableHTTPClientTransport(endpoint);
 
 function toolText(result) {
@@ -43,7 +43,11 @@ try {
   const capabilitiesCall = await call("get_capabilities");
   if (capabilitiesCall.result.isError) throw new Error("get_capabilities returned an MCP error");
   const capabilities = JSON.parse(capabilitiesCall.text);
-  if (capabilities.server?.version !== "0.3.0" || capabilities.features?.batchWrite !== true) {
+  if (
+    capabilities.server?.version !== "0.3.2"
+    || capabilities.features?.batchWrite !== true
+    || capabilities.features?.commandProjectBoundary !== true
+  ) {
     throw new Error("Capability discovery did not expose the reliable-project feature set");
   }
   if (capabilities.workspace?.rootName?.includes(":\\") || "root" in (capabilities.workspace || {})) {

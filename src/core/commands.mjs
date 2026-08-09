@@ -1,6 +1,6 @@
 import path from "node:path";
 import os from "node:os";
-import { readFile, stat } from "node:fs/promises";
+import { readFile, realpath, stat } from "node:fs/promises";
 
 import { CoreErrorCode, coreError, normalizeCoreError } from "./errors.mjs";
 import { sha256 } from "./hash.mjs";
@@ -14,6 +14,21 @@ function validateRelativeCommandPath(value) {
   if (value.includes("\0") || value.includes("\n") || value.includes("\r")) return false;
   if (path.isAbsolute(value)) return false;
   return !value.split(/[\\/]+/).includes("..");
+}
+
+function gitLaunchArgs(args) {
+  const base = [
+    "--no-pager",
+    "-c", "core.fsmonitor=false",
+    "-c", "core.untrackedCache=false",
+    "-c", "diff.external="
+  ];
+  if (args[0] === "diff") return [...base, "diff", "--no-ext-diff", ...args.slice(1)];
+  return [...base, ...args];
+}
+
+function toolNullDevice() {
+  return process.platform === "win32" ? "NUL" : os.devNull;
 }
 
 export class CommandPolicy {
@@ -106,6 +121,102 @@ export class CommandService {
     this.policy = commandPolicy;
   }
 
+  commandEnvironment(program, commandCwd) {
+    if (program === "git") {
+      return {
+        GIT_CEILING_DIRECTORIES: path.dirname(this.workspace.root),
+        GIT_CONFIG_GLOBAL: toolNullDevice(),
+        GIT_CONFIG_SYSTEM: toolNullDevice(),
+        GIT_DISCOVERY_ACROSS_FILESYSTEM: "0",
+        GIT_OPTIONAL_LOCKS: "0",
+        GIT_PAGER: "",
+        GIT_TERMINAL_PROMPT: "0",
+        PAGER: ""
+      };
+    }
+    if (program === "npm") {
+      return {
+        NPM_CONFIG_AUDIT: "false",
+        NPM_CONFIG_FUND: "false",
+        NPM_CONFIG_GLOBALCONFIG: path.join(os.tmpdir(), "luna-npm-empty-globalconfig"),
+        NPM_CONFIG_PREFIX: commandCwd,
+        NPM_CONFIG_UPDATE_NOTIFIER: "false",
+        NPM_CONFIG_USERCONFIG: path.join(os.tmpdir(), "luna-npm-empty-userconfig")
+      };
+    }
+    if (program === "go") {
+      return {
+        GOENV: "off",
+        GOPROXY: "off",
+        GOSUMDB: "off",
+        GOTOOLCHAIN: "local",
+        GOWORK: "off"
+      };
+    }
+    return {};
+  }
+
+  async requireProjectFile(commandCwd, fileName, projectKind) {
+    const projectFile = path.join(commandCwd, fileName);
+    await this.workspace.rejectSymlinks(projectFile, true);
+    const info = await stat(projectFile).catch((error) => {
+      if (error?.code === "ENOENT") {
+        deny(`${projectKind} commands require ${fileName} in the selected cwd; parent project discovery is blocked`);
+      }
+      throw normalizeCoreError(error, CoreErrorCode.IO_ERROR);
+    });
+    if (!info.isFile()) deny(`${fileName} in the selected cwd is not a regular file`);
+    return commandCwd;
+  }
+
+  async assertInsideWorkspace(candidatePath, label) {
+    const [canonicalRoot, canonicalCandidate] = await Promise.all([
+      realpath(this.workspace.root),
+      realpath(candidatePath)
+    ]).catch((error) => { throw normalizeCoreError(error, CoreErrorCode.IO_ERROR); });
+    const relative = path.relative(canonicalRoot, canonicalCandidate);
+    if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+      deny(`${label} resolves outside the authorized workspace`);
+    }
+    return canonicalCandidate;
+  }
+
+  async inspectGitRepository(commandCwd, timeoutSeconds, environmentOverrides) {
+    const launch = launchFor("git", gitLaunchArgs([
+      "rev-parse",
+      "--path-format=absolute",
+      "--show-toplevel",
+      "--git-dir",
+      "--git-common-dir"
+    ]));
+    const output = await runCapturedProcess(launch.executable, launch.args, {
+      cwd: commandCwd,
+      timeoutMs: Math.min(timeoutSeconds * 1000, 15000),
+      maxOutputBytes: Math.min(this.maxCommandOutputBytes, 16 * 1024),
+      environmentOverrides
+    });
+    if (output.timedOut) deny("Git repository boundary inspection timed out");
+    if (output.exitCode !== 0) return null;
+
+    const [worktreeRoot, gitDirectory, commonDirectory] = output.stdout.trim().split(/\r?\n/);
+    if (!worktreeRoot || !gitDirectory || !commonDirectory) {
+      deny("Git returned an incomplete repository boundary description");
+    }
+    const canonicalRoot = await this.assertInsideWorkspace(worktreeRoot, "Git worktree root");
+    await this.assertInsideWorkspace(gitDirectory, "Git directory");
+    await this.assertInsideWorkspace(commonDirectory, "Git common directory");
+    return canonicalRoot;
+  }
+
+  async assertProjectBoundary(program, commandCwd, timeoutSeconds, environmentOverrides) {
+    if (program === "git") {
+      return this.inspectGitRepository(commandCwd, timeoutSeconds, environmentOverrides);
+    }
+    if (program === "npm") return this.requireProjectFile(commandCwd, "package.json", "npm");
+    if (program === "go") return this.requireProjectFile(commandCwd, "go.mod", "Go");
+    return null;
+  }
+
   async execute({ program, args, cwd: relativeCwd, timeoutSeconds }) {
     const classification = this.policy.validate(program, args);
     const commandCwd = this.workspace.resolve(relativeCwd);
@@ -113,11 +224,15 @@ export class CommandService {
     const info = await stat(commandCwd).catch((error) => { throw normalizeCoreError(error, CoreErrorCode.IO_ERROR); });
     if (!info.isDirectory()) throw coreError(CoreErrorCode.PATH_NOT_DIRECTORY, "Command cwd is not a directory");
 
-    const launch = launchFor(program, args);
+    const environmentOverrides = this.commandEnvironment(program, commandCwd);
+    const projectRoot = await this.assertProjectBoundary(program, commandCwd, timeoutSeconds, environmentOverrides);
+    const launchArgs = program === "git" ? gitLaunchArgs(args) : args;
+    const launch = launchFor(program, launchArgs);
     const output = await runCapturedProcess(launch.executable, launch.args, {
       cwd: commandCwd,
       timeoutMs: timeoutSeconds * 1000,
-      maxOutputBytes: this.maxCommandOutputBytes
+      maxOutputBytes: this.maxCommandOutputBytes,
+      environmentOverrides
     });
     const displayCommand = [program, ...args].map((value) => (/\s/.test(value) ? JSON.stringify(value) : value)).join(" ");
     const payload = {
@@ -141,7 +256,9 @@ export class CommandService {
         stderrTruncated: output.stderrTruncated,
         riskLevel: classification.riskLevel,
         transitiveExecution: classification.transitiveExecution,
-        commandSource: classification.source
+        commandSource: classification.source,
+        projectBoundary: "workspace-only",
+        projectRoot: projectRoot ? this.workspace.display(projectRoot) : null
       }
     };
   }
