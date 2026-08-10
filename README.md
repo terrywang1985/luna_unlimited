@@ -167,7 +167,7 @@ npm run test:patch
 npm run test:artifact
 ```
 
-架构说明和后续能力见 [AGENT_CAPABILITIES_ROADMAP.md](AGENT_CAPABILITIES_ROADMAP.md)。
+v0.6.4 已达到“可靠工程编辑闭环”里程碑。近期版本的可执行任务、优先级和验收标准见 [TODO.md](TODO.md)，长期架构原则见 [AGENT_CAPABILITIES_ROADMAP.md](AGENT_CAPABILITIES_ROADMAP.md)。
 
 ## 许可证
 
