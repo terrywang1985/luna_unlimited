@@ -1,4 +1,4 @@
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { createMcpExpressApp } from "@modelcontextprotocol/sdk/server/express.js";
 import { LATEST_PROTOCOL_VERSION } from "@modelcontextprotocol/sdk/types.js";
@@ -15,10 +15,31 @@ function toMcpResult(result) {
 
 function createMcpServer(core, context) {
   const server = new McpServer(
-    { name: "luna-unlimited", version: "0.5.0" },
+    { name: "luna-unlimited", version: "0.6.4" },
     {
       instructions:
-        "Use these tools only inside the configured workspace. Call get_capabilities first. Use stat_path before changing an existing file. Prefer apply_patch with an explicit SHA-256 or null expectation for every touched path when editing code, and write_files for complete-file project creation. Run npm and Go commands from the directory that directly contains package.json or go.mod; parent project discovery is blocked."
+        "Use these tools only inside the configured workspace. Call get_capabilities first. Use stat_path before changing an existing file. Prefer apply_patch with explicit revisions for code edits. Use inspect_artifact/import_artifact/export_artifact for PDF, spreadsheet, and image files; never encode binary bytes into text tools. Create a checkpoint before large recursive deletes."
+    }
+  );
+
+  server.registerResource(
+    "exported-workspace-artifact",
+    new ResourceTemplate("luna-artifact://export/{token}", { list: undefined }),
+    {
+      title: "Authorized exported workspace artifact",
+      description: "Short-lived content for a file explicitly authorized through export_artifact.",
+      mimeType: "application/octet-stream"
+    },
+    async (uri, { token }) => {
+      const result = await core.readArtifactResource(String(token), context);
+      if (!result.ok) throw new Error(result.error.message);
+      return {
+        contents: [{
+          uri: uri.toString(),
+          mimeType: result.data.mimeType,
+          blob: result.data.blob
+        }]
+      };
     }
   );
 
@@ -230,6 +251,187 @@ function createMcpServer(core, context) {
       context,
       `${dry_run ? "Dry-run" : "Apply"} an atomic unified diff touching ${expected_files.length} file(s)`
     ))
+  );
+
+  server.registerTool(
+    "create_directory",
+    {
+      title: "Create a workspace directory",
+      description: "Create a directory and missing parents inside the authorized workspace. Existing directories are an idempotent success.",
+      inputSchema: {
+        path: z.string().min(1).describe("Directory path relative to the MCP workspace")
+      },
+      outputSchema: {
+        path: z.string(),
+        created: z.boolean()
+      },
+      annotations: { readOnlyHint: false, openWorldHint: false, destructiveHint: false }
+    },
+    async ({ path }) => toMcpResult(await core.execute(
+      "create_directory",
+      { path },
+      context,
+      `Create workspace directory ${path}`
+    ))
+  );
+
+  server.registerTool(
+    "move_path",
+    {
+      title: "Move a workspace path",
+      description:
+        "Atomically move a regular file or safe directory inside the workspace. Files require expected_sha256. Overwriting an existing file additionally requires expected_destination_sha256. Sensitive paths and symlink-containing trees are rejected.",
+      inputSchema: {
+        source: z.string().min(1).describe("Existing source path relative to the workspace"),
+        destination: z.string().min(1).describe("Destination path relative to the workspace"),
+        overwrite: z.boolean().default(false),
+        expected_sha256: z.string().regex(/^[a-f0-9]{64}$/i).optional()
+          .describe("Required when source is a file; obtain it from stat_path or inspect_artifact"),
+        expected_destination_sha256: z.string().regex(/^[a-f0-9]{64}$/i).optional()
+          .describe("Required when overwrite=true and destination is an existing file")
+      },
+      outputSchema: {
+        source: z.string(),
+        destination: z.string(),
+        type: z.enum(["file", "directory"]),
+        overwritten: z.boolean(),
+        entries: z.number().int().nonnegative(),
+        bytes: z.number().int().nonnegative(),
+        sha256: z.string().nullable(),
+        cleanupPending: z.boolean()
+      },
+      annotations: { readOnlyHint: false, openWorldHint: false, destructiveHint: true }
+    },
+    async ({ source, destination, overwrite, expected_sha256, expected_destination_sha256 }) => toMcpResult(await core.execute(
+      "move_path",
+      {
+        source,
+        destination,
+        overwrite,
+        expectedSha256: expected_sha256,
+        expectedDestinationSha256: expected_destination_sha256
+      },
+      context,
+      `Move ${source} to ${destination}${overwrite ? " and overwrite the existing destination" : ""}`
+    ))
+  );
+
+  server.registerTool(
+    "delete_path",
+    {
+      title: "Delete a workspace path",
+      description:
+        "Permanently delete a regular file or directory inside the workspace. Files require expected_sha256. Non-empty directories require recursive=true. Sensitive paths, symlinks, and workspace-root deletion are rejected. Create a checkpoint first when recovery may be needed.",
+      inputSchema: {
+        path: z.string().min(1).describe("Path relative to the MCP workspace"),
+        recursive: z.boolean().default(false),
+        expected_sha256: z.string().regex(/^[a-f0-9]{64}$/i).optional()
+          .describe("Required when deleting a file; obtain it from stat_path or inspect_artifact")
+      },
+      outputSchema: {
+        path: z.string(),
+        type: z.enum(["file", "directory"]),
+        recursive: z.boolean(),
+        entries: z.number().int().nonnegative(),
+        bytes: z.number().int().nonnegative(),
+        sha256: z.string().nullable(),
+        deleted: z.boolean(),
+        cleanupPending: z.boolean()
+      },
+      annotations: { readOnlyHint: false, openWorldHint: false, destructiveHint: true }
+    },
+    async ({ path, recursive, expected_sha256 }) => toMcpResult(await core.execute(
+      "delete_path",
+      { path, recursive, expectedSha256: expected_sha256 },
+      context,
+      `Permanently delete ${path}${recursive ? " recursively" : ""}`
+    ))
+  );
+
+  server.registerTool(
+    "inspect_artifact",
+    {
+      title: "Inspect a binary workspace artifact",
+      description:
+        "Inspect a PDF, spreadsheet, image, or other regular binary file without returning its raw bytes. Returns detected MIME type, size, SHA-256, and available image/PDF metadata.",
+      inputSchema: {
+        path: z.string().min(1).describe("Artifact path relative to the MCP workspace")
+      },
+      annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false }
+    },
+    async ({ path }) => toMcpResult(await core.execute("inspect_artifact", { path }, context))
+  );
+
+  server.registerTool(
+    "import_artifact",
+    {
+      title: "Save an authorized web file to the workspace",
+      description:
+        "Import a Host-authorized file or generated artifact into the workspace as PDF, XLS/XLSX, PNG, JPEG, GIF, or WebP. Pass the actual Host file through the file input; do not copy its file_id into an ordinary string. ChatGPT rewrites a proxied mount at this declared fileParams path into download_url and file_id before MCP delivery. Luna then blocks local/private sources, validates signatures and size, and commits atomically. expected_sha256 must be null for a new destination or the current digest when overwriting.",
+      inputSchema: {
+        file: z.object({
+          download_url: z.string().url(),
+          file_id: z.string().min(1),
+          mime_type: z.string().optional(),
+          file_name: z.string().optional()
+        }),
+        destination: z.string().min(1).describe("Destination path relative to the workspace, including an allowed extension"),
+        expected_sha256: z.string().regex(/^[a-f0-9]{64}$/i).nullable()
+          .describe("Current destination SHA-256, or null only when destination must not exist")
+      },
+      _meta: {
+        "openai/fileParams": ["file"]
+      },
+      annotations: { readOnlyHint: false, openWorldHint: true, destructiveHint: false }
+    },
+    async ({ file, destination, expected_sha256 }) => toMcpResult(await core.execute(
+      "import_artifact",
+      {
+        source: {
+          url: file.download_url,
+          id: file.file_id,
+          mimeType: file.mime_type,
+          fileName: file.file_name
+        },
+        destination,
+        expectedSha256: expected_sha256
+      },
+      context,
+      `Import authorized file ${file.file_name || file.file_id} to ${destination}`
+    ))
+  );
+
+  server.registerTool(
+    "export_artifact",
+    {
+      title: "Export a workspace artifact to the Host",
+      description:
+        "Create a short-lived, revision-bound MCP resource link for a workspace PDF, spreadsheet, image, or other regular file. The resource read fails if the file changes after link creation.",
+      inputSchema: {
+        path: z.string().min(1).describe("Artifact path relative to the MCP workspace")
+      },
+      annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false }
+    },
+    async ({ path }) => {
+      const result = await core.execute(
+        "export_artifact",
+        { path },
+        context,
+        `Export ${path} to the connected Host`
+      );
+      const response = toMcpResult(result);
+      if (result.ok) {
+        response.content.push({
+          type: "resource_link",
+          uri: result.data.structured.resourceUri,
+          name: result.data.structured.name,
+          description: `Exported workspace artifact ${result.data.structured.path}`,
+          mimeType: result.data.structured.mimeType,
+          size: result.data.structured.bytes
+        });
+      }
+      return response;
+    }
   );
 
   server.registerTool(

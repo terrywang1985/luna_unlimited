@@ -171,6 +171,11 @@ MCP_PORT=18765
 MCP_MAX_FILE_BYTES=1048576
 MCP_MAX_BATCH_BYTES=8388608
 MCP_MAX_COMMAND_OUTPUT_BYTES=262144
+MCP_MAX_CHECKPOINT_FILES=5000
+MCP_MAX_CHECKPOINT_BYTES=134217728
+MCP_MAX_CHECKPOINTS=20
+MCP_MAX_ARTIFACT_BYTES=26214400
+MCP_MAX_OPERATION_ENTRIES=10000
 ```
 
 变量说明：
@@ -188,6 +193,8 @@ MCP_MAX_COMMAND_OUTPUT_BYTES=262144
 | `MCP_MAX_CHECKPOINT_FILES` | 单个恢复点最多文件/目录数 | 5000 |
 | `MCP_MAX_CHECKPOINT_BYTES` | 单个恢复点内容上限 | 128 MiB |
 | `MCP_MAX_CHECKPOINTS` | 每个 workspace 最多恢复点 | 20 |
+| `MCP_MAX_ARTIFACT_BYTES` | 单个导入、检查或导出的二进制文件上限 | 25 MiB |
+| `MCP_MAX_OPERATION_ENTRIES` | 单次递归移动/删除最多扫描条目 | 10000 |
 | `LUNA_STATE_DIR` | 可选私有状态目录，必须在 workspace 外 | 系统用户状态目录 |
 
 ## 8. 选择安全的 Workspace 并启动
@@ -260,7 +267,7 @@ Dashboard: http://127.0.0.1:18765/admin
 
 ![创建 Tunnel 类型的 ChatGPT 插件](images/4_create_plugin/3_plugins_create.jpg)
 
-如果插件扫描后没有看到 16 个工具，先确认本机 MCP/Tunnel Ready，然后删除或刷新开发插件并新开一个对话。工具目录在已有会话里可能被缓存。
+如果插件扫描后没有看到 22 个工具，先确认本机 MCP/Tunnel Ready，然后删除或刷新开发插件并新开一个对话。工具目录在已有会话里可能被缓存。
 
 ## 11. 在网页中使用 Luna
 
@@ -359,6 +366,28 @@ apply_patch(
 
 Core 在文件锁内先解析整份 diff，并在内存中生成全部目标内容；只有全部验证通过才写盘。提交过程中任一文件失败，会恢复此前已经变更的文件。审计事件用 `validation`、`dry_run`、`committed`、`rollback` 区分阶段，但不保存 diff 正文。v0.5.0 暂不支持 binary patch、rename/copy patch、quoted Git path，以及缺少末尾换行的文本文件；这些情况会明确失败，不会部分提交。
 
+### 文件重构与删除
+
+`create_directory` 可以显式创建目录；`move_path` 支持文件和安全目录的原子移动；`delete_path` 删除文件或目录。移动和删除文件前必须先 `stat_path` 或 `inspect_artifact`，并传入 SHA-256。覆盖目标文件还需要 `expected_destination_sha256`。非空目录删除必须使用 `recursive=true`，建议先创建 checkpoint。
+
+递归目录操作会拒绝 `.git`、`.env`、凭据文件、内部临时文件和任何符号链接，并有条目数量上限。workspace 根不能移动或删除。`delete_path` 和覆盖移动都属于高风险操作，会受本地权限、审批和审计控制。
+
+### PDF、Excel 和图片 Artifact
+
+二进制文件不要传给 `read_text_file`，改用：
+
+```text
+inspect_artifact(path="assets/mockup.png")
+export_artifact(path="reports/result.pdf")
+import_artifact(file=<网页文件参数>, destination="assets/generated.png", expected_sha256=null)
+```
+
+`import_artifact` 当前允许 PDF、XLS/XLSX、PNG、JPEG、GIF、WebP。ChatGPT Adapter 按 [OpenAI File APIs 参考](https://developers.openai.com/plugins/reference#file-apis) 使用官方 `_meta["openai/fileParams"]` 接收 `file_id` 和临时 `download_url`，随后 Core 执行 HTTPS/公网地址、重定向、大小、扩展名、MIME 和文件签名检查，并用临时文件原子提交。不能把任意 URL 当下载器使用。
+
+ChatGPT 生成物和用户附件都必须作为实际 Host 文件传给 `import_artifact.file`，不要把界面上看到的 `file_id` 手工复制成普通字符串。v0.6.3 起只在 `file` 这个顶层字段声明 `openai/fileParams`；当调用关联着 proxied mount 时，Host 会沿该路径在请求抵达 MCP 前补齐 `download_url` 和 `file_id`。v0.6.4 同时修复 Node 22 HTTPS pinned DNS lookup 的 `all:true` 回调形态。随后 Core 执行相同的 HTTPS 公网来源、重定向、大小、扩展名、MIME、签名、revision、审批和原子提交检查。网页 `/mnt/data/...` 路径和裸 ID 永远不会被 Luna Core 当成本地路径或下载凭据。
+
+`export_artifact` 返回标准 MCP `resource_link`；链接只在短时间内有效并绑定当前 SHA-256，文件变化后旧链接立即失效。不同 Host 对资源链接的展示方式可能不同。v0.6.4 先完成安全传输、正式 Host 文件参数和元数据检查，Excel 单元格级读写、PDF 文本提取/渲染将在后续文档处理层实现。
+
 ### 依赖安装为什么单独提供工具
 
 任意 shell 权限过大。`install_dependencies` 当前只接受 npm，强制公共 registry，并关闭 lifecycle scripts、audit 和 fund hook。网络下载第三方包仍有供应链风险，因此它是受保护工具。
@@ -376,7 +405,7 @@ Dashboard 可以查看：
 - MCP 是否 Ready；
 - Tunnel 是否 Ready；
 - 当前授权 workspace；
-- 16 个工具的启用状态；
+- 22 个工具的启用状态；
 - 待审批操作；
 - 最近读写、执行、拒绝和错误日志。
 
@@ -386,6 +415,11 @@ Dashboard 可以查看：
 - `replace_text`
 - `write_files`
 - `apply_patch`
+- `create_directory`
+- `move_path`
+- `delete_path`
+- `import_artifact`
+- `export_artifact`
 - `create_checkpoint`
 - `restore_checkpoint`
 - `delete_checkpoint`
@@ -510,9 +544,10 @@ npm run test:mcp
 npm run test:admin
 npm run test:workspace
 npm run test:patch
+npm run test:artifact
 ```
 
-完整测试覆盖旧 7 个工具 contract、路径和敏感文件、权限、审批、审计、SHA-256 冲突、多文件事务、atomic unified diff 的 dry-run/提交/失败回滚、npm lifecycle scripts、非 Git checkpoint 的完整恢复/失败回滚/损坏拒绝，以及生成工程自身的测试。
+完整测试覆盖旧 7 个工具 contract、路径和敏感文件、权限、审批、审计、SHA-256 冲突、多文件事务、atomic unified diff 的 dry-run/提交/失败回滚、目录并发门、受保护删除、Artifact 签名/SSRF/原子导入/resource link、npm lifecycle scripts、非 Git checkpoint 的完整恢复/失败回滚/损坏拒绝，以及生成工程自身的测试。
 
 ## 18. 官方资料
 

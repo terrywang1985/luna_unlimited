@@ -17,6 +17,8 @@ const maxCommandOutputBytes = Number.parseInt(process.env.MCP_MAX_COMMAND_OUTPUT
 const maxCheckpointFiles = Number.parseInt(process.env.MCP_MAX_CHECKPOINT_FILES || "5000", 10);
 const maxCheckpointBytes = Number.parseInt(process.env.MCP_MAX_CHECKPOINT_BYTES || String(128 * 1024 * 1024), 10);
 const maxCheckpoints = Number.parseInt(process.env.MCP_MAX_CHECKPOINTS || "20", 10);
+const maxArtifactBytes = Number.parseInt(process.env.MCP_MAX_ARTIFACT_BYTES || String(25 * 1024 * 1024), 10);
+const maxOperationEntries = Number.parseInt(process.env.MCP_MAX_OPERATION_ENTRIES || "10000", 10);
 const defaultStateDir = process.platform === "win32"
   ? path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local"), "LunaUnlimited")
   : path.join(process.env.XDG_STATE_HOME || path.join(os.homedir(), ".local", "state"), "luna-unlimited");
@@ -47,6 +49,12 @@ if (!Number.isInteger(maxCheckpointBytes) || maxCheckpointBytes < maxFileBytes) 
 if (!Number.isInteger(maxCheckpoints) || maxCheckpoints < 1 || maxCheckpoints > 1000) {
   throw new Error("MCP_MAX_CHECKPOINTS must be between 1 and 1000");
 }
+if (!Number.isInteger(maxArtifactBytes) || maxArtifactBytes < 1024 || maxArtifactBytes > 256 * 1024 * 1024) {
+  throw new Error("MCP_MAX_ARTIFACT_BYTES must be between 1024 and 268435456");
+}
+if (!Number.isInteger(maxOperationEntries) || maxOperationEntries < 1 || maxOperationEntries > 1000000) {
+  throw new Error("MCP_MAX_OPERATION_ENTRIES must be between 1 and 1000000");
+}
 
 const core = await createLunaCore({
   workspaceRoot,
@@ -57,7 +65,9 @@ const core = await createLunaCore({
   checkpointRoot,
   maxCheckpointFiles,
   maxCheckpointBytes,
-  maxCheckpoints
+  maxCheckpoints,
+  maxArtifactBytes,
+  maxOperationEntries
 });
 const app = createMcpApp({ host, core });
 registerAdminRoutes(app, { core, adminPagePath, logsDir, host, port, startedAt });

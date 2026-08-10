@@ -6,6 +6,10 @@ import { CoreErrorCode, coreError, normalizeCoreError } from "./errors.mjs";
 export function isSensitiveRelativePath(relativePath) {
   const segments = relativePath.split(/[\\/]+/).filter(Boolean).map((segment) => segment.toLocaleLowerCase());
   if (segments.includes(".git")) return true;
+  if (segments.some((segment) => segment.startsWith(".luna-move-backup-")
+    || segment.startsWith(".luna-delete-")
+    || segment.startsWith(".luna-import-")
+    || segment.startsWith(".luna-import-backup-"))) return true;
   const leaf = segments.at(-1) || "";
   if (leaf === ".env.example" || leaf === ".env.sample") return false;
   if (leaf === ".env" || leaf.startsWith(".env.")) return true;
@@ -63,7 +67,8 @@ export class WorkspaceService {
   }
 
   display(absolutePath) {
-    return path.relative(this.root, absolutePath) || ".";
+    const relative = path.relative(this.root, absolutePath) || ".";
+    return relative.split(path.sep).join("/");
   }
 
   relative(absolutePath) {

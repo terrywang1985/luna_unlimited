@@ -2,7 +2,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
 const endpoint = new URL(process.env.MCP_TEST_URL || "http://127.0.0.1:18765/mcp");
-const client = new Client({ name: "luna-real-workspace-test", version: "0.5.0" });
+const client = new Client({ name: "luna-real-workspace-test", version: "0.6.4" });
 const transport = new StreamableHTTPClientTransport(endpoint);
 
 try {
@@ -10,16 +10,16 @@ try {
 
   const listing = await client.callTool({ name: "list_directory", arguments: { path: "." } });
   const listingText = listing.content?.find((item) => item.type === "text")?.text || "";
-  if (!listingText.includes("package.json") || !listingText.includes("src")) {
-    throw new Error("Configured workspace does not expose the project root");
-  }
+  const exposesProjectRoot = listingText.includes("package.json") && listingText.includes("src");
   const listingRows = listingText.split(/\r?\n/);
   if (listingRows.includes("[file] .env") || listingRows.includes("[dir] .git")) {
     throw new Error("Sensitive entries were visible in the root listing");
   }
 
-  const packageRead = await client.callTool({ name: "read_text_file", arguments: { path: "package.json" } });
-  if (packageRead.isError) throw new Error("Could not read project package.json");
+  if (exposesProjectRoot) {
+    const packageRead = await client.callTool({ name: "read_text_file", arguments: { path: "package.json" } });
+    if (packageRead.isError) throw new Error("Could not read project package.json");
+  }
 
   const sensitiveRead = await client.callTool({ name: "read_text_file", arguments: { path: ".env" } });
   if (!sensitiveRead.isError) throw new Error("Sensitive .env read was not blocked");
@@ -38,6 +38,9 @@ try {
   if (gitStatus.isError) throw new Error("Allowlisted git status command was rejected");
   const gitPayload = JSON.parse(gitStatus.content?.find((item) => item.type === "text")?.text || "{}");
   if (!("exit_code" in gitPayload)) throw new Error("git status did not return an exit code");
+  if (!exposesProjectRoot && gitPayload.exit_code === 0) {
+    throw new Error("Git crossed the configured workspace boundary and discovered a parent repository");
+  }
 
   const dangerousCommand = await client.callTool({
     name: "exec_command",
@@ -45,7 +48,9 @@ try {
   });
   if (!dangerousCommand.isError) throw new Error("Non-whitelisted git invocation was not rejected");
 
-  console.log("PASS: configured workspace exposes real project files");
+  console.log(exposesProjectRoot
+    ? "PASS: configured project workspace exposes its real project files"
+    : "PASS: configured non-project workspace does not discover the parent project");
   console.log("PASS: sensitive project files remain hidden and unreadable");
   console.log("PASS: sensitive project files are excluded from search");
   console.log(`PASS: git status returned structured exit code ${gitPayload.exit_code}`);

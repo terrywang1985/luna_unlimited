@@ -35,6 +35,8 @@ flowchart LR
 - 原子创建或更新最多 50 个文件，失败时回滚；
 - 创建、列出、恢复和删除非 Git 本地恢复点，恢复失败自动回滚；
 - 使用 unified diff 原子修改、创建或删除最多 50 个文件，强制 SHA-256 并发保护并支持 dry-run；
+- 创建目录、移动文件/目录，以及受审批保护、带 revision 的删除；
+- 检查 PDF、Excel 和图片等二进制 Artifact，并通过 Host 文件参数导入、MCP resource link 导出；
 - 受控安装 npm 依赖，强制禁用 lifecycle scripts；
 - 运行白名单内的 Git、Go、npm build/test/lint/typecheck 命令；
 - 命令侧项目发现不会越过授权 workspace：Git 仓库、npm manifest 和 Go module 必须位于授权边界内；
@@ -42,13 +44,15 @@ flowchart LR
 - 在本机 Dashboard 查看权限、运行状态、审批队列和审计日志；
 - 拒绝绝对路径、`..`、符号链接逃逸、`.env`、私钥和常见凭据文件。
 
-当前版本提供 16 个 MCP 工具：
+当前版本提供 22 个 MCP 工具：
 
 | 分类 | 工具 |
 | --- | --- |
 | 能力发现 | `get_capabilities` |
 | 浏览与读取 | `list_directory`, `stat_path`, `read_text_file`, `read_text_file_range`, `search_files` |
 | 写入 | `write_text_file`, `replace_text`, `write_files`, `apply_patch` |
+| 文件重构 | `create_directory`, `move_path`, `delete_path` |
+| Artifact | `inspect_artifact`, `import_artifact`, `export_artifact` |
 | 恢复 | `create_checkpoint`, `list_checkpoints`, `restore_checkpoint`, `delete_checkpoint` |
 | 执行 | `exec_command`, `install_dependencies` |
 
@@ -146,6 +150,12 @@ v0.4.0 提供与 Git 解耦的 `local-snapshot` 恢复后端。快照保存在 w
 
 v0.5.0 提供事务化 `apply_patch`。它接受标准 unified diff，可在一次调用中创建、修改和删除最多 50 个 UTF-8 文本文件。每个触及路径都必须声明当前预期状态：已有文件传 `stat_path` 返回的 SHA-256，新文件传 `null`。Core 会在同一组文件锁内完成全部路径、revision、context 和大小校验，先在内存生成所有结果，再提交；提交中途失败会恢复已写入文件。`dry_run=true` 执行相同校验但不落盘。审计只记录路径、行数、阶段和 hash，不保存 patch 正文。当前版本对缺少末尾换行的文件 fail closed。
 
+v0.6.0 增加完整文件重构与 Artifact Bridge。`create_directory`、`move_path`、`delete_path` 允许 Agent 完成目录拆分和清理；移动/删除文件强制使用 SHA-256 revision，递归目录操作会扫描敏感路径和符号链接，workspace 根永远不可删除。`inspect_artifact` 检测二进制格式、大小、hash 和图片尺寸；`import_artifact` 通过 Host 授权文件参数导入 PDF、XLS/XLSX、PNG、JPEG、GIF、WebP，强制 HTTPS 公网来源、文件签名、类型和大小校验并原子落盘；`export_artifact` 返回短时、绑定 revision 的标准 MCP resource link。Core 不包含 OpenAI 文件语义，`file_id/download_url` 仅由当前 MCP Adapter 映射。当前版本完成文件传输和元数据检查，尚未提供 Excel 单元格编辑或 PDF 文本/页面解析。
+
+v0.6.3 将用户附件和 Host 生成物统一到正式文件参数链路。网页 Agent 必须把实际 Artifact 传给 `import_artifact.file`，不能把可见的 `file_id` 复制到普通字符串参数。MCP Adapter 只在这个顶层字段声明 `openai/fileParams=["file"]`，Host 因而能在 MCP 调用前沿明确路径把 proxied mount 重写为完整 `{download_url,file_id,mime_type?,file_name?}`。此前 v0.6.1/v0.6.2 的字符串 reference → Widget 方案会在 UI 打开前被 Host 拒绝，现已删除。Core 仍只接收 Adapter 映射后的授权 URL 与 opaque source id，并继续执行目标预检、网络边界、文件签名、revision、审批、审计和原子落盘；网页沙箱路径和裸 ID 都不是下载凭据。
+
+v0.6.4 修复 Node 22 HTTPS 客户端请求 DNS `lookup` 的 `all:true` 模式时，固定地址回调仍返回旧式单地址参数而导致的 `Invalid IP address: undefined`。下载器现在按调用模式返回单地址或地址数组，继续保持 DNS pinning 和公网地址检查。导入结果只返回 `sourceScheme`（例如 `sediment`）用于确认 Artifact 管道类型；成功 audit 与失败诊断都不记录临时 URL、完整 `file_id` 或 token。
+
 ## 开发与验证
 
 ```powershell
@@ -154,6 +164,7 @@ npm run test:mcp
 npm run test:admin
 npm run test:workspace
 npm run test:patch
+npm run test:artifact
 ```
 
 架构说明和后续能力见 [AGENT_CAPABILITIES_ROADMAP.md](AGENT_CAPABILITIES_ROADMAP.md)。

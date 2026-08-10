@@ -2,7 +2,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
 const baseUrl = process.env.MCP_TEST_BASE_URL || "http://127.0.0.1:18765";
-const client = new Client({ name: "luna-checkpoint-mcp-test", version: "0.5.0" });
+const client = new Client({ name: "luna-checkpoint-mcp-test", version: "0.6.4" });
 const transport = new StreamableHTTPClientTransport(new URL(`${baseUrl}/mcp`));
 let initialApprovalEnabled = false;
 
@@ -75,7 +75,7 @@ try {
 
   const capabilitiesCall = await call("get_capabilities");
   const capabilities = JSON.parse(capabilitiesCall.text);
-  if (capabilities.server.version !== "0.5.0" || capabilities.features.checkpoint !== true) {
+  if (capabilities.server.version !== "0.6.4" || capabilities.features.checkpoint !== true) {
     throw new Error("Checkpoint capability was not advertised");
   }
   if (

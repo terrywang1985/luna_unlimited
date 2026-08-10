@@ -326,7 +326,7 @@
       $("permissions").innerHTML = data.permissions.map((permission) => `
         <div class="permission">
           <div>
-            <div class="permission-name">${escapeHtml(permission.label)}<span class="tag ${permission.level === "write" ? "write" : permission.level === "execute" ? "execute" : ""}">${escapeHtml(permission.level)}</span></div>
+            <div class="permission-name">${escapeHtml(permission.label)}<span class="tag ${permission.level === "write" ? "write" : ["execute", "delete", "network"].includes(permission.level) ? "execute" : ""}">${escapeHtml(permission.level)}</span></div>
             <div class="permission-meta">${escapeHtml(permission.name)}</div>
           </div>
           <button class="button toggle ${permission.enabled ? "on" : "off"}" type="button" data-tool="${escapeHtml(permission.name)}" data-enabled="${permission.enabled}">
@@ -337,6 +337,8 @@
       $("policy").innerHTML = `
         <div class="policy-row"><dt>绑定地址</dt><dd>${escapeHtml(data.server.endpoint)}</dd></div>
         <div class="policy-row"><dt>最大文件</dt><dd>${formatBytes(data.policy.maxFileBytes)}</dd></div>
+        <div class="policy-row"><dt>Artifact 上限</dt><dd>${formatBytes(data.policy.maxArtifactBytes)}</dd></div>
+        <div class="policy-row"><dt>递归操作上限</dt><dd>${escapeHtml(data.policy.maxOperationEntries)} 个条目</dd></div>
         <div class="policy-row"><dt>绝对路径</dt><dd>${data.policy.absolutePaths ? "允许" : "拒绝"}</dd></div>
         <div class="policy-row"><dt>符号链接</dt><dd>${data.policy.symbolicLinks ? "允许" : "拒绝"}</dd></div>
         <div class="policy-row"><dt>恢复后端</dt><dd>${escapeHtml(data.policy.checkpointBackend)}</dd></div>

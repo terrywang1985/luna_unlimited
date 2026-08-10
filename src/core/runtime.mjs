@@ -2,6 +2,7 @@ import path from "node:path";
 import { mkdir } from "node:fs/promises";
 
 import { ApprovalManager } from "./approval.mjs";
+import { ArtifactService } from "./artifacts.mjs";
 import { AuditStore } from "./audit.mjs";
 import { buildCapabilities } from "./capabilities.mjs";
 import { CheckpointService } from "./checkpoints.mjs";
@@ -9,6 +10,7 @@ import { CommandService } from "./commands.mjs";
 import { auditContext, createWorkSessionContext } from "./context.mjs";
 import { CoreErrorCode, coreError, normalizeCoreError } from "./errors.mjs";
 import { FileService } from "./files.mjs";
+import { FileOperationsService } from "./file-operations.mjs";
 import { FileMutationQueue } from "./mutation-queue.mjs";
 import { PatchService } from "./patch.mjs";
 import { PolicyService } from "./policy.mjs";
@@ -26,6 +28,8 @@ export class LunaCore {
     maxCheckpointFiles = 5000,
     maxCheckpointBytes = 128 * 1024 * 1024,
     maxCheckpoints = 20,
+    maxArtifactBytes = 25 * 1024 * 1024,
+    maxOperationEntries = 10000,
     maxAuditEntries = 500
   }) {
     this.workspace = new WorkspaceService(workspaceRoot);
@@ -35,7 +39,9 @@ export class LunaCore {
       maxCommandOutputBytes,
       maxCheckpointFiles,
       maxCheckpointBytes,
-      maxCheckpoints
+      maxCheckpoints,
+      maxArtifactBytes,
+      maxOperationEntries
     };
     this.policy = new PolicyService();
     this.approvals = new ApprovalManager({ policy: this.policy });
@@ -47,6 +53,16 @@ export class LunaCore {
       maxFileBytes,
       maxBatchBytes,
       maxCommandOutputBytes
+    });
+    this.fileOperations = new FileOperationsService({
+      workspace: this.workspace,
+      mutations: this.mutations,
+      maxOperationEntries
+    });
+    this.artifacts = new ArtifactService({
+      workspace: this.workspace,
+      mutations: this.mutations,
+      maxArtifactBytes
     });
     this.search = new SearchService({ workspace: this.workspace, maxCommandOutputBytes });
     this.patch = new PatchService({
@@ -77,6 +93,12 @@ export class LunaCore {
       replace_text: (request) => this.files.replaceText(request),
       write_files: (request) => this.files.writeFiles(request),
       apply_patch: (request) => this.patch.apply(request),
+      create_directory: (request) => this.fileOperations.createDirectory(request),
+      move_path: (request) => this.fileOperations.movePath(request),
+      delete_path: (request) => this.fileOperations.deletePath(request),
+      inspect_artifact: (request) => this.artifacts.inspect(request),
+      import_artifact: (request) => this.artifacts.import(request),
+      export_artifact: (request) => this.artifacts.export(request),
       create_checkpoint: (request) => this.checkpoints.create(request),
       list_checkpoints: () => this.checkpoints.list(),
       restore_checkpoint: (request) => this.checkpoints.restore(request),
@@ -108,6 +130,8 @@ export class LunaCore {
     const started = performance.now();
     const context = createWorkSessionContext(inputContext);
     const targetPath = request.path
+      ?? request.destination
+      ?? request.source
       ?? request.cwd
       ?? request.checkpointId
       ?? request.label
@@ -180,6 +204,34 @@ export class LunaCore {
     };
   }
 
+  async readArtifactResource(token, inputContext = {}) {
+    const started = performance.now();
+    const context = createWorkSessionContext(inputContext);
+    try {
+      const data = await this.artifacts.readExportResource(token);
+      const audit = this.audit.record({
+        tool: "export_artifact.resource",
+        path: data.path,
+        status: "success",
+        durationMs: Math.round(performance.now() - started),
+        details: { bytes: data.bytes, sha256: data.sha256, mimeType: data.mimeType },
+        context: auditContext(context)
+      });
+      return { ok: true, data, meta: { durationMs: audit.durationMs, auditId: audit.id } };
+    } catch (rawError) {
+      const error = normalizeCoreError(rawError);
+      const audit = this.audit.record({
+        tool: "export_artifact.resource",
+        path: "artifact-export-token",
+        status: "error",
+        durationMs: Math.round(performance.now() - started),
+        details: { error: error.message, errorCode: error.code },
+        context: auditContext(context)
+      });
+      return this.failure(error, audit);
+    }
+  }
+
   setToolPermission(tool, enabled) {
     if (!this.policy.setToolEnabled(tool, enabled)) return null;
     this.audit.record({ tool: "admin.permission", path: tool, status: "success", details: { enabled } });
@@ -224,7 +276,9 @@ export class LunaCore {
         checkpointBackend: this.checkpoints.backend,
         maxCheckpoints: this.limits.maxCheckpoints,
         maxCheckpointFiles: this.limits.maxCheckpointFiles,
-        maxCheckpointBytes: this.limits.maxCheckpointBytes
+        maxCheckpointBytes: this.limits.maxCheckpointBytes,
+        maxArtifactBytes: this.limits.maxArtifactBytes,
+        maxOperationEntries: this.limits.maxOperationEntries
       },
       permissions: this.policy.permissionRows(),
       approval: {

@@ -142,7 +142,7 @@ get_capabilities()
 {
   "server": {
     "name": "luna-unlimited",
-    "version": "0.5.0"
+    "version": "0.6.4"
   },
   "protocol": {
     "adapter": "mcp",
@@ -192,7 +192,7 @@ Agent 每次新连接都可以先探测能力，而不是依赖模型记忆。
 
 # 2. 当前能力
 
-当前 v0.5.0 已有 16 个 MCP Tools。原有 7 个 Tool 保持 Stage 0 contract 兼容，另有 5 个可靠工程原语和 4 个本地恢复原语：
+当前 v0.6.4 有 22 个 MCP Tools。原有 7 个 Tool 保持 Stage 0 contract 兼容，并已补齐可靠编辑、文件重构、Artifact 传输、Host 文件参数导入和本地恢复原语：
 
 ```text
 get_capabilities
@@ -205,6 +205,12 @@ write_text_file
 replace_text
 write_files
 apply_patch
+create_directory
+move_path
+delete_path
+inspect_artifact
+import_artifact
+export_artifact
 create_checkpoint
 list_checkpoints
 restore_checkpoint
@@ -235,6 +241,10 @@ install_dependencies
 - 非 Git `local-snapshot` checkpoint backend，私有存储位于 workspace 外；
 - restore 使用 workspace 独占锁，失败回滚；
 - unified diff 支持 dry-run 与多文件事务提交，每个触及路径强制声明 SHA-256 或新文件 `null` 预期；
+- 文件移动/删除强制 revision、敏感路径与 symlink 扫描，workspace 根不可破坏；
+- PDF、XLS/XLSX、PNG/JPEG/GIF/WebP 可通过 Host 文件参数安全导入，任意二进制可检查并通过短时 MCP resource link 导出；
+- Host 文件和生成物统一通过 `import_artifact.file` 的正式 `openai/fileParams` 路径进入；Host 在 MCP 调用前把 proxied mount 重写为完整 `{download_url,file_id,mime_type?,file_name?}`，Core 不接收裸引用或网页沙箱路径；
+- HTTPS 下载使用 DNS 解析后地址固定，并同时支持 Node 的单地址和 `all:true` lookup callback 形态；导入结果/audit 只保留 `sourceScheme` 或 source 字段存在性/类型，不记录 URL、完整 file id 或 token；
 
 当前已经可以做到：
 
@@ -244,7 +254,7 @@ discover → inspect/hash → search/read → atomic batch write/patch → insta
 
 本轮已补齐中等规模工程创建最关键的可靠性底座：安全 capability discovery、已有文件 SHA-256 冲突保护、进程内 per-file mutation queue、整批验证与失败回滚、禁止 npm lifecycle scripts 的受控依赖安装，以及命令侧不越过 workspace 的项目发现边界。
 
-尚未完成的完整 Coding Agent 能力包括 create/move/delete、policy persistence、长进程和结构化 diagnostics。它们仍按后续 Milestone 推进，不应把 v0.5.0 宣称为完整 Coding Agent Runtime。
+尚未完成的完整工作站 Agent 能力包括 Excel 单元格编辑、PDF 提取/渲染、policy persistence、长进程和结构化 diagnostics。它们仍按后续 Milestone 推进，不应把 v0.6.4 宣称为完整文档处理 Runtime。
 
 ---
 

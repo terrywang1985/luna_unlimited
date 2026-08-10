@@ -13,7 +13,7 @@ export function buildCapabilities({ workspace, policy, limits, adapter = "unknow
   ]));
 
   return {
-    server: { name: "luna-unlimited", version: "0.5.0" },
+    server: { name: "luna-unlimited", version: "0.6.4" },
     protocol: { adapter, version: protocolVersion },
     workspace: { rootName: path.basename(workspace.root), writable: true },
     features: {
@@ -26,6 +26,12 @@ export function buildCapabilities({ workspace, policy, limits, adapter = "unknow
       dependencyInstall: true,
       commandProjectBoundary: true,
       patch: true,
+      fileOperations: true,
+      artifactTransfer: true,
+      artifactImport: true,
+      artifactHostFileInput: adapter === "mcp",
+      artifactExport: true,
+      binaryInspect: true,
       process: false,
       checkpoint: true,
       checkpointBackend: "local-snapshot"
@@ -39,13 +45,15 @@ export function buildCapabilities({ workspace, policy, limits, adapter = "unknow
       maxBatchFiles: 50,
       maxCheckpoints: limits.maxCheckpoints,
       maxCheckpointFiles: limits.maxCheckpointFiles,
-      maxCheckpointBytes: limits.maxCheckpointBytes
+      maxCheckpointBytes: limits.maxCheckpointBytes,
+      maxArtifactBytes: limits.maxArtifactBytes,
+      maxOperationEntries: limits.maxOperationEntries
     },
     policy: {
       version: snapshot.version,
       revision: snapshot.revision,
       approvalEnabled: snapshot.approvalEnabled,
-      networkMode: "dependency-install-only"
+      networkMode: "dependency-install-and-authorized-artifact-import"
     }
   };
 }
