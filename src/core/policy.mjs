@@ -20,7 +20,8 @@ export const TOOL_DEFINITIONS = Object.freeze([
   { name: "restore_checkpoint", label: "恢复工作区", level: "write" },
   { name: "delete_checkpoint", label: "删除恢复点", level: "write" },
   { name: "exec_command", label: "执行命令", level: "execute" },
-  { name: "install_dependencies", label: "安装项目依赖", level: "execute" }
+  { name: "install_dependencies", label: "安装项目依赖", level: "execute" },
+  { name: "clone_repository", label: "克隆公开仓库", level: "network" }
 ]);
 
 export const PROTECTED_TOOLS = Object.freeze([
@@ -37,7 +38,8 @@ export const PROTECTED_TOOLS = Object.freeze([
   "restore_checkpoint",
   "delete_checkpoint",
   "exec_command",
-  "install_dependencies"
+  "install_dependencies",
+  "clone_repository"
 ]);
 
 export class PolicyService {

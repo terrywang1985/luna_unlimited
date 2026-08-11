@@ -2,7 +2,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
 const baseUrl = process.env.MCP_TEST_BASE_URL || "http://127.0.0.1:18765";
-const client = new Client({ name: "luna-patch-mcp-test", version: "0.6.4" });
+const client = new Client({ name: "luna-patch-mcp-test", version: "0.6.5" });
 const transport = new StreamableHTTPClientTransport(new URL(`${baseUrl}/mcp`));
 const project = `patch-mcp-test-${process.pid}`;
 
@@ -82,7 +82,7 @@ try {
   if (!tools.has("apply_patch")) throw new Error("MCP does not expose apply_patch");
 
   const capabilities = (await call("get_capabilities")).payload;
-  if (capabilities.server.version !== "0.6.4" || capabilities.features.patch !== true) {
+  if (capabilities.server.version !== "0.6.5" || capabilities.features.patch !== true) {
     throw new Error("Patch capability/version is not advertised");
   }
   if (!capabilities.tools.apply_patch?.approvalProtected) throw new Error("apply_patch is not approval protected");
@@ -206,7 +206,7 @@ try {
     throw new Error("Denied patch audit event is missing");
   }
 
-  console.log("PASS: MCP advertises v0.6.4 atomic apply_patch capability");
+  console.log("PASS: MCP advertises v0.6.5 atomic apply_patch capability");
   console.log("PASS: MCP dry-run and create/update/delete round trip succeeded");
   console.log("PASS: Dashboard approval can approve or deny apply_patch without bypassing Core policy");
   console.log("PASS: local permission disables apply_patch and committed/denied calls remain auditable");

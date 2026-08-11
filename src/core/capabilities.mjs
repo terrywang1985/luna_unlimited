@@ -13,7 +13,7 @@ export function buildCapabilities({ workspace, policy, limits, adapter = "unknow
   ]));
 
   return {
-    server: { name: "luna-unlimited", version: "0.6.4" },
+    server: { name: "luna-unlimited", version: "0.6.5" },
     protocol: { adapter, version: protocolVersion },
     workspace: { rootName: path.basename(workspace.root), writable: true },
     features: {
@@ -24,6 +24,7 @@ export function buildCapabilities({ workspace, policy, limits, adapter = "unknow
       batchWrite: true,
       exec: true,
       dependencyInstall: true,
+      publicRepositoryClone: true,
       commandProjectBoundary: true,
       patch: true,
       fileOperations: true,
@@ -47,13 +48,15 @@ export function buildCapabilities({ workspace, policy, limits, adapter = "unknow
       maxCheckpointFiles: limits.maxCheckpointFiles,
       maxCheckpointBytes: limits.maxCheckpointBytes,
       maxArtifactBytes: limits.maxArtifactBytes,
-      maxOperationEntries: limits.maxOperationEntries
+      maxOperationEntries: limits.maxOperationEntries,
+      maxRepositoryFiles: limits.maxOperationEntries,
+      maxRepositoryBytes: limits.maxCheckpointBytes
     },
     policy: {
       version: snapshot.version,
       revision: snapshot.revision,
       approvalEnabled: snapshot.approvalEnabled,
-      networkMode: "dependency-install-and-authorized-artifact-import"
+      networkMode: "public-github-clone-dependency-install-and-authorized-artifact-import"
     }
   };
 }

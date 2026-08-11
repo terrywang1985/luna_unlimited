@@ -38,13 +38,14 @@ flowchart LR
 - 创建目录、移动文件/目录，以及受审批保护、带 revision 的删除；
 - 检查 PDF、Excel 和图片等二进制 Artifact，并通过 Host 文件参数导入、MCP resource link 导出；
 - 受控安装 npm 依赖，强制禁用 lifecycle scripts；
+- 将公开 GitHub 仓库安全、浅层、原子地克隆到 workspace 新目录；
 - 运行白名单内的 Git、Go、npm build/test/lint/typecheck 命令；
 - 命令侧项目发现不会越过授权 workspace：Git 仓库、npm manifest 和 Go module 必须位于授权边界内；
 - 文件搜索不会继承 workspace 父目录仓库的 ignore 规则；
 - 在本机 Dashboard 查看权限、运行状态、审批队列和审计日志；
 - 拒绝绝对路径、`..`、符号链接逃逸、`.env`、私钥和常见凭据文件。
 
-当前版本提供 22 个 MCP 工具：
+当前版本提供 23 个 MCP 工具：
 
 | 分类 | 工具 |
 | --- | --- |
@@ -54,7 +55,7 @@ flowchart LR
 | 文件重构 | `create_directory`, `move_path`, `delete_path` |
 | Artifact | `inspect_artifact`, `import_artifact`, `export_artifact` |
 | 恢复 | `create_checkpoint`, `list_checkpoints`, `restore_checkpoint`, `delete_checkpoint` |
-| 执行 | `exec_command`, `install_dependencies` |
+| 执行与项目获取 | `exec_command`, `install_dependencies`, `clone_repository` |
 
 ## 五分钟开始
 
@@ -156,6 +157,8 @@ v0.6.3 将用户附件和 Host 生成物统一到正式文件参数链路。网�
 
 v0.6.4 修复 Node 22 HTTPS 客户端请求 DNS `lookup` 的 `all:true` 模式时，固定地址回调仍返回旧式单地址参数而导致的 `Invalid IP address: undefined`。下载器现在按调用模式返回单地址或地址数组，继续保持 DNS pinning 和公网地址检查。导入结果只返回 `sourceScheme`（例如 `sediment`）用于确认 Artifact 管道类型；成功 audit 与失败诊断都不记录临时 URL、完整 `file_id` 或 token。
 
+v0.6.5 增加独立的 `clone_repository`，用于把公开 `github.com` 仓库克隆到 workspace 内的新目录。它不扩大通用 `exec_command` 的 Git 白名单：只接受无凭据 HTTPS，拒绝其他 Host、端口、查询参数和重定向，关闭系统/全局 Git 配置、credential helper、交互认证、代理、Git LFS smudge 与子模块初始化，默认 `depth=1`。Clone 先进入随机私有临时目录，通过文件数、总大小、敏感路径、符号链接和 HEAD 校验后再原子提交；失败会清理临时目录。Private 仓库尚不支持，不能把 PAT 放入 URL。
+
 ## 开发与验证
 
 ```powershell
@@ -167,7 +170,7 @@ npm run test:patch
 npm run test:artifact
 ```
 
-v0.6.4 已达到“可靠工程编辑闭环”里程碑。近期版本的可执行任务、优先级和验收标准见 [TODO.md](TODO.md)，长期架构原则见 [AGENT_CAPABILITIES_ROADMAP.md](AGENT_CAPABILITIES_ROADMAP.md)。
+v0.6.5 已达到“可靠工程编辑闭环 + 公开仓库导入”里程碑。近期版本的可执行任务、优先级和验收标准见 [TODO.md](TODO.md)，长期架构原则见 [AGENT_CAPABILITIES_ROADMAP.md](AGENT_CAPABILITIES_ROADMAP.md)。
 
 ## 许可证
 

@@ -91,7 +91,7 @@ write conflict protection
 create/move/delete
 ```
 
-当前 v0.4.0 已完成非 Git checkpoint/restore，v0.5.0 已完成 atomic `apply_patch`，v0.6.0 已完成 create/move/protected delete 与 Artifact Bridge，v0.6.3 已将 Host Artifact 导入统一到正式 `fileParams` 路径，v0.6.4 修复 Node 22 HTTPS pinned DNS lookup 的 `all:true` 兼容问题。不要重复实现这些能力；下一阶段可推进文档格式处理、policy persistence 或 process manager。
+当前 v0.4.0 已完成非 Git checkpoint/restore，v0.5.0 已完成 atomic `apply_patch`，v0.6.0 已完成 create/move/protected delete 与 Artifact Bridge，v0.6.3 已将 Host Artifact 导入统一到正式 `fileParams` 路径，v0.6.4 修复 Node 22 HTTPS pinned DNS lookup 的 `all:true` 兼容问题，v0.6.5 已完成公开 GitHub 仓库的受限原子 Clone。不要重复实现这些能力；下一阶段可推进文档格式处理、policy persistence 或 process manager。
 
 ## 架构硬约束
 

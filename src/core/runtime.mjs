@@ -14,6 +14,7 @@ import { FileOperationsService } from "./file-operations.mjs";
 import { FileMutationQueue } from "./mutation-queue.mjs";
 import { PatchService } from "./patch.mjs";
 import { PolicyService } from "./policy.mjs";
+import { RepositoryService } from "./repositories.mjs";
 import { SearchService } from "./search.mjs";
 import { WorkspaceService } from "./workspace.mjs";
 
@@ -72,6 +73,13 @@ export class LunaCore {
       maxBatchBytes
     });
     this.commands = new CommandService({ workspace: this.workspace, mutations: this.mutations, maxCommandOutputBytes });
+    this.repositories = new RepositoryService({
+      workspace: this.workspace,
+      mutations: this.mutations,
+      maxRepositoryFiles: maxOperationEntries,
+      maxRepositoryBytes: maxCheckpointBytes,
+      maxCommandOutputBytes
+    });
     this.checkpoints = new CheckpointService({
       workspace: this.workspace,
       mutations: this.mutations,
@@ -104,7 +112,8 @@ export class LunaCore {
       restore_checkpoint: (request) => this.checkpoints.restore(request),
       delete_checkpoint: (request) => this.checkpoints.delete(request),
       exec_command: (request) => this.commands.execute(request),
-      install_dependencies: (request) => this.commands.installDependencies(request)
+      install_dependencies: (request) => this.commands.installDependencies(request),
+      clone_repository: (request) => this.repositories.clone(request)
     };
   }
 

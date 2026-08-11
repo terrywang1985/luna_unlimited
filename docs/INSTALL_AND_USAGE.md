@@ -267,7 +267,7 @@ Dashboard: http://127.0.0.1:18765/admin
 
 ![创建 Tunnel 类型的 ChatGPT 插件](images/4_create_plugin/3_plugins_create.jpg)
 
-如果插件扫描后没有看到 22 个工具，先确认本机 MCP/Tunnel Ready，然后删除或刷新开发插件并新开一个对话。工具目录在已有会话里可能被缓存。
+如果插件扫描后没有看到 23 个工具，先确认本机 MCP/Tunnel Ready，然后删除或刷新开发插件并新开一个对话。工具目录在已有会话里可能被缓存。
 
 ## 11. 在网页中使用 Luna
 
@@ -298,12 +298,27 @@ Dashboard: http://127.0.0.1:18765/admin
 
 建议从 Node.js、TypeScript、静态网站或 Go 工程开始。当前可以创建 Python 文件，但默认命令白名单不允许任意执行 Python；这是安全限制，不是模型能力问题。
 
+如果从公开 GitHub 项目开始，可以先调用：
+
+```text
+clone_repository(
+  url="https://github.com/owner/repository",
+  destination="repository",
+  ref="main",
+  depth=1
+)
+```
+
+目标必须是 workspace 内尚不存在的新目录。当前只支持公开 `github.com` HTTPS 仓库；不接受 SSH、`file://`、其他 Host、非 443 端口、重定向或 URL 内的账号/token。Private 仓库需要未来的 OAuth/Secret Broker，不能把 PAT 拼进 URL。
+
 ## 12. Agent 创建工程的可靠工作流
 
 Luna 的推荐工作流不是“直接覆盖所有文件”，而是：
 
 ```text
 get_capabilities
+    ↓
+clone_repository（仅从公开 GitHub 项目开始时）
     ↓
 list/search/stat/read
     ↓
@@ -392,6 +407,10 @@ ChatGPT 生成物和用户附件都必须作为实际 Host 文件传给 `import_
 
 任意 shell 权限过大。`install_dependencies` 当前只接受 npm，强制公共 registry，并关闭 lifecycle scripts、audit 和 fund hook。网络下载第三方包仍有供应链风险，因此它是受保护工具。
 
+### 仓库 Clone 为什么单独提供工具
+
+`clone_repository` 不通过通用 `exec_command` 放开 `git clone`。Core 会验证公开 GitHub URL、DNS、公网 Host、目标目录和 ref，关闭凭据助手、交互认证、代理、重定向、LFS smudge 与子模块初始化，并限制深度、超时、文件数和字节数。仓库先写入不可由 Agent 直接寻址的随机临时目录，拒绝敏感路径和符号链接，校验成功后原子移动到目标；失败不会留下半个目标目录。它是 `network + write` 风险的受保护工具。
+
 ## 13. Dashboard、权限、审批和日志
 
 打开：
@@ -405,7 +424,7 @@ Dashboard 可以查看：
 - MCP 是否 Ready；
 - Tunnel 是否 Ready；
 - 当前授权 workspace；
-- 22 个工具的启用状态；
+- 23 个工具的启用状态；
 - 待审批操作；
 - 最近读写、执行、拒绝和错误日志。
 
@@ -425,6 +444,7 @@ Dashboard 可以查看：
 - `delete_checkpoint`
 - `exec_command`
 - `install_dependencies`
+- `clone_repository`
 
 审批默认 120 秒超时拒绝。Dashboard 和审计不会保存待写入正文或 API Key。
 
@@ -444,6 +464,7 @@ Dashboard 可以查看：
 - npm/Go 命令要求 `cwd` 直接包含 `package.json`/`go.mod`，不会复用父目录项目；
 - Go build/test 禁用自动 toolchain 下载与模块网络获取，只使用本机 toolchain 和已有 module cache；
 - Git、Node/npm、Go 的项目重定向和执行控制环境变量会被过滤，并由 Core 注入安全值；
+- 公开仓库 Clone 只允许无凭据 `github.com` HTTPS，拒绝重定向和私有网络来源，并在原子提交前检查仓库规模和敏感路径；
 - 写入队列、SHA-256 冲突保护、权限、审批和审计。
 
 ### 用户仍然需要负责

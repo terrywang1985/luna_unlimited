@@ -5,7 +5,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
 const baseUrl = process.env.MCP_TEST_BASE_URL || "http://127.0.0.1:18765";
-const client = new Client({ name: "luna-artifact-mcp-test", version: "0.6.4" });
+const client = new Client({ name: "luna-artifact-mcp-test", version: "0.6.5" });
 const transport = new StreamableHTTPClientTransport(new URL(`${baseUrl}/mcp`));
 const project = `artifact-mcp-test-${process.pid}`;
 const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
@@ -100,7 +100,7 @@ try {
   }
 
   const capabilities = (await call("get_capabilities")).payload;
-  if (capabilities.server.version !== "0.6.4" || !capabilities.features.artifactTransfer
+  if (capabilities.server.version !== "0.6.5" || !capabilities.features.artifactTransfer
     || !capabilities.features.fileOperations || !capabilities.features.artifactHostFileInput) {
     throw new Error("v0.6 capabilities are not advertised");
   }
@@ -184,7 +184,7 @@ try {
     throw new Error("Denied delete_path changed the workspace");
   }
 
-  console.log("PASS: MCP exposes six v0.6.4 file-operation and artifact tools");
+  console.log("PASS: MCP exposes six v0.6.5 file-operation and artifact tools");
   console.log("PASS: import_artifact publishes one exact Host mount rewrite path with the complete file schema");
   console.log("PASS: create/move/delete round trip enforces file revisions");
   console.log("PASS: binary inspection and MCP resource-link export preserve exact image bytes");

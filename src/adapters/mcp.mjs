@@ -15,7 +15,7 @@ function toMcpResult(result) {
 
 function createMcpServer(core, context) {
   const server = new McpServer(
-    { name: "luna-unlimited", version: "0.6.4" },
+    { name: "luna-unlimited", version: "0.6.5" },
     {
       instructions:
         "Use these tools only inside the configured workspace. Call get_capabilities first. Use stat_path before changing an existing file. Prefer apply_patch with explicit revisions for code edits. Use inspect_artifact/import_artifact/export_artifact for PDF, spreadsheet, and image files; never encode binary bytes into text tools. Create a checkpoint before large recursive deletes."
@@ -591,6 +591,38 @@ function createMcpServer(core, context) {
       { packageManager: package_manager, mode, cwd, timeoutSeconds: timeout_seconds },
       context,
       `Install ${package_manager} dependencies in ${cwd} with lifecycle scripts disabled`
+    ))
+  );
+
+  server.registerTool(
+    "clone_repository",
+    {
+      title: "Clone a public GitHub repository safely",
+      description:
+        "Clone one public github.com repository over credential-free HTTPS into a new directory inside the authorized workspace. The operation is shallow, single-branch, non-interactive, does not initialize submodules or Git LFS objects, rejects redirects and credentials, enforces filesystem limits, validates HEAD, and commits the destination atomically.",
+      inputSchema: {
+        url: z.string().url().describe("Public repository URL in the form https://github.com/owner/repository"),
+        destination: z.string().min(1).describe("New destination directory relative to the MCP workspace"),
+        ref: z.string().min(1).max(255).optional().describe("Optional public branch or tag name"),
+        depth: z.number().int().min(1).max(50).default(1),
+        timeout_seconds: z.number().int().min(1).max(600).default(180)
+      },
+      outputSchema: {
+        repository: z.string(),
+        destination: z.string(),
+        ref: z.string().nullable(),
+        commit: z.string(),
+        depth: z.number().int(),
+        shallow: z.boolean(),
+        files: z.number().int(),
+        bytes: z.number().int()
+      }
+    },
+    async ({ url, destination, ref, depth, timeout_seconds }) => toMcpResult(await core.execute(
+      "clone_repository",
+      { url, destination, ref: ref ?? null, depth, timeoutSeconds: timeout_seconds },
+      context,
+      `Clone public GitHub repository into ${destination}`
     ))
   );
 

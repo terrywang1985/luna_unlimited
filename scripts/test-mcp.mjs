@@ -34,7 +34,8 @@ try {
     "restore_checkpoint",
     "delete_checkpoint",
     "exec_command",
-    "install_dependencies"
+    "install_dependencies",
+    "clone_repository"
   ]) {
     if (!toolNames.includes(expected)) throw new Error(`Missing tool: ${expected}`);
   }

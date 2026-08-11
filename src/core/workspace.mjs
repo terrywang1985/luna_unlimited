@@ -8,6 +8,7 @@ export function isSensitiveRelativePath(relativePath) {
   if (segments.includes(".git")) return true;
   if (segments.some((segment) => segment.startsWith(".luna-move-backup-")
     || segment.startsWith(".luna-delete-")
+    || segment.startsWith(".luna-clone-")
     || segment.startsWith(".luna-import-")
     || segment.startsWith(".luna-import-backup-"))) return true;
   const leaf = segments.at(-1) || "";

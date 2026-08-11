@@ -1,6 +1,6 @@
 # Luna Unlimited · 后续迭代 TODO
 
-> 基线版本：v0.6.4（2026-08-10）
+> 基线版本：v0.6.5（2026-08-12）
 >
 > 当前里程碑：**可靠工程编辑闭环**。任意兼容 Host 已能在单个授权 workspace 内完成 capability discovery、代码读取与搜索、带 revision 的原子修改、依赖安装、构建/测试、checkpoint/restore，以及 Artifact 双向传输。这个基线已经能够支持人工发起、Agent 持续调用工具的中等规模工程开发。
 
@@ -14,6 +14,7 @@
 - [x] v0.4.0：非 Git `local-snapshot` checkpoint / restore。
 - [x] v0.6.0：目录创建、移动、受保护删除和 Artifact 双向传输。
 - [x] v0.6.4：正式 Host `fileParams` 导入链路、DNS pinning 与 Node 22 HTTPS 兼容。
+- [x] v0.6.5：受限公开 GitHub `clone_repository`，包含无凭据 HTTPS、DNS/Host 策略、临时目录校验、大小限制、原子提交、审批和审计。
 
 ## v0.7 · 持久安全策略与项目任务
 
