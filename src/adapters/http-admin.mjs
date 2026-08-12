@@ -25,7 +25,7 @@ export function registerAdminRoutes(app, { core, adminPagePath, logsDir, host, p
       server: {
         ready: true,
         name: "luna-unlimited",
-        version: "0.6.5",
+        version: "0.7.0",
         endpoint: `http://${host}:${port}/mcp`,
         adminUrl: `http://${host}:${port}/admin`,
         startedAt: startedAt.toISOString(),
@@ -43,14 +43,14 @@ export function registerAdminRoutes(app, { core, adminPagePath, logsDir, host, p
     res.json({ events: core.audit.list(limit) });
   });
 
-  app.post("/admin/api/permissions/:tool", (req, res) => {
+  app.post("/admin/api/actions/:action", (req, res) => {
     if (typeof req.body?.enabled !== "boolean") {
       res.status(400).json({ error: "enabled must be a boolean" });
       return;
     }
-    const result = core.setToolPermission(req.params.tool, req.body.enabled);
+    const result = core.setActionPermission(req.params.action, req.body.enabled);
     if (!result) {
-      res.status(404).json({ error: "Unknown tool" });
+      res.status(404).json({ error: "Unknown action" });
       return;
     }
     res.json(result);

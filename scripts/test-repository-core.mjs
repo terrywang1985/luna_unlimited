@@ -187,8 +187,8 @@ try {
     processRunner: auditedFixture.runner,
     repositoryUrlResolver: async () => canonical
   });
-  core.toolHandlers.clone_repository = (request) => core.repositories.clone(request);
-  const result = await core.execute("clone_repository", {
+  core.actionHandlers["git.clone"] = (request) => core.repositories.clone(request);
+  const result = await core.execute("git.clone", {
     url: canonical.url,
     destination: "audited-project",
     ref: null,
@@ -196,13 +196,13 @@ try {
     timeoutSeconds: 30
   }, { caller: { clientId: "repository-test", protocol: "direct" } });
   assert.equal(result.ok, true);
-  const audit = core.audit.list(20).find((event) => event.tool === "clone_repository" && event.status === "success");
+  const audit = core.audit.list(20).find((event) => event.tool === "git.clone" && event.status === "success");
   assert.equal(audit.details.repositoryHost, "github.com");
   assert.equal(audit.details.repositoryPath, "terrywang1985/luna_unlimited");
   assert.equal(JSON.stringify(audit).includes("token="), false);
 
-  core.setToolPermission("clone_repository", false);
-  const denied = await core.execute("clone_repository", {
+  core.setActionPermission("git.clone", false);
+  const denied = await core.execute("git.clone", {
     url: canonical.url,
     destination: "denied-project",
     depth: 1,

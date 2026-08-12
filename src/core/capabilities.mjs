@@ -1,19 +1,23 @@
 import path from "node:path";
+import { publicToolSummary } from "./actions.mjs";
 
 export function buildCapabilities({ workspace, policy, limits, adapter = "unknown", protocolVersion = "unknown" }) {
   const snapshot = policy.snapshot();
-  const tools = Object.fromEntries(policy.permissionRows().map((tool) => [
-    tool.name,
+  const tools = publicToolSummary(policy);
+  const actions = Object.fromEntries(policy.actionRows().map((action) => [
+    action.id,
     {
-      enabled: tool.enabled,
-      requiresApproval: policy.requiresApproval(tool.name),
-      approvalProtected: policy.protectedTools.has(tool.name),
-      level: tool.level
+      enabled: action.enabled,
+      requiresApproval: policy.requiresApproval(action.id),
+      approvalProtected: policy.protectedActions.has(action.id),
+      level: action.level,
+      tool: action.publicTool,
+      operation: action.operation
     }
   ]));
 
   return {
-    server: { name: "luna-unlimited", version: "0.6.5" },
+    server: { name: "luna-unlimited", version: "0.7.0" },
     protocol: { adapter, version: protocolVersion },
     workspace: { rootName: path.basename(workspace.root), writable: true },
     features: {
@@ -38,6 +42,7 @@ export function buildCapabilities({ workspace, policy, limits, adapter = "unknow
       checkpointBackend: "local-snapshot"
     },
     tools,
+    actions,
     limits: {
       maxFileBytes: limits.maxFileBytes,
       maxBatchBytes: limits.maxBatchBytes,

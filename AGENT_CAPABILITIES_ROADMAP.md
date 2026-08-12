@@ -18,7 +18,7 @@
 >
 > 核心原则：**协议可换，模型可换，Host 可换，本地能力和安全策略不换。**
 >
-> v0.6.5 之后的近期版本任务、优先级和完成标准统一维护在 [TODO.md](TODO.md)；本文继续作为长期架构与安全约束。
+> v0.7.0 之后的近期版本任务、优先级和完成标准统一维护在 [TODO.md](TODO.md)；本文继续作为长期架构与安全约束。
 
 ---
 
@@ -128,7 +128,33 @@ codex_patch
 
 ---
 
-## 1.4 Capability Discovery 是一等能力
+## 1.4 Compact Domain Tool 与 Action Registry
+
+MCP 的公开 Tool 列表保持紧凑，不能随 Core 能力增长而无限平铺。v0.7.0 起采用两层命名：
+
+```text
+MCP public tool             Core action
+workspace.read(text)   -->  workspace.read_text
+workspace.manage(delete) -> workspace.delete
+git.read(status)       -->  git.status
+git.remote(clone)      -->  git.clone
+```
+
+公开 Tool 按领域和风险边界组织；拥有多个操作时，使用根对象中的 `request`，并以 `operation` discriminated union 产生对 Host 可见的 `oneOf` Schema。不要实现任意字符串形式的万能 `execute(action, args)`。
+
+Core Action 必须保持细粒度，并独立声明：
+
+- permission；
+- risk level；
+- approval protection；
+- audit id；
+- public Tool 与 operation 映射。
+
+一个聚合 Tool 内的只读与写入操作不得因此共享 Core 权限。例如 `git.status` 不能因为与 `git.clone` 同属 Git 领域就获得网络权限。当前 SDK 无法正确把根级 union 输出到 `tools/list`，所以 union 放在顶层 `request` 属性中；测试必须验证 `request.oneOf` 实际可见。
+
+---
+
+## 1.5 Capability Discovery 是一等能力
 
 不同 Host 支持能力不同，而且网页工具可能存在缓存。
 
@@ -144,7 +170,7 @@ get_capabilities()
 {
   "server": {
     "name": "luna-unlimited",
-    "version": "0.6.5"
+    "version": "0.7.0"
   },
   "protocol": {
     "adapter": "mcp",
@@ -194,32 +220,22 @@ Agent 每次新连接都可以先探测能力，而不是依赖模型记忆。
 
 # 2. 当前能力
 
-当前 v0.6.5 有 23 个 MCP Tools。原有 7 个 Tool 保持 Stage 0 contract 兼容，并已补齐可靠编辑、文件重构、Artifact 传输、Host 文件参数导入、本地恢复和公开仓库导入原语：
+当前 v0.7.0 对 Host 暴露 13 个 Compact Domain Tools，并由 26 个 Core Actions 承载细粒度安全语义。旧的 23 个平铺 Tool 已在项目尚无外部用户时一次性删除，不保留 legacy Adapter：
 
 ```text
-get_capabilities
-list_directory
-stat_path
-read_text_file
-read_text_file_range
-search_files
-write_text_file
-replace_text
-write_files
-apply_patch
-create_directory
-move_path
-delete_path
-inspect_artifact
-import_artifact
-export_artifact
-create_checkpoint
-list_checkpoints
-restore_checkpoint
-delete_checkpoint
-exec_command
-install_dependencies
-clone_repository
+luna.capabilities
+workspace.read
+workspace.write
+workspace.manage
+code.patch
+artifact.read
+artifact.import
+checkpoint.read
+checkpoint.write
+git.read
+git.remote
+project.execute
+project.dependencies
 ```
 
 现有安全边界：
@@ -258,7 +274,7 @@ discover → inspect/hash → search/read → atomic batch write/patch → insta
 
 本轮已补齐中等规模工程创建最关键的可靠性底座：安全 capability discovery、已有文件 SHA-256 冲突保护、进程内 per-file mutation queue、整批验证与失败回滚、禁止 npm lifecycle scripts 的受控依赖安装，以及命令侧不越过 workspace 的项目发现边界。
 
-尚未完成的完整工作站 Agent 能力包括私有仓库 OAuth、Excel 单元格编辑、PDF 提取/渲染、policy persistence、长进程和结构化 diagnostics。它们仍按后续 Milestone 推进，不应把 v0.6.5 宣称为完整文档处理 Runtime。
+尚未完成的完整工作站 Agent 能力包括私有仓库 OAuth、Excel 单元格编辑、PDF 提取/渲染、policy persistence、长进程和结构化 diagnostics。它们仍按后续 Milestone 推进，不应把 v0.7.0 宣称为完整文档处理 Runtime。
 
 ---
 
@@ -1017,73 +1033,49 @@ approval
 
 ---
 
-# 12. 推荐最终 Core Tool Set
+# 12. 推荐 Public Tool / Core Action 结构
 
-保持少而通用。
-
-## Discover / Context
+公开 MCP Tool 保持在大约 10～20 个领域入口，而 Core Action 可以随能力增加到数十或上百个：
 
 ```text
-get_capabilities
-get_project_context
-detect_project
+luna.capabilities
+workspace.read
+workspace.write
+workspace.manage
+code.patch
+artifact.read
+artifact.import
+checkpoint.read
+checkpoint.write
+git.read
+git.remote
+project.execute
+project.dependencies
 ```
 
-## Read
+未来增加能力时优先扩展现有领域的 `request.operation`，但必须同时满足：
+
+1. operation 输入仍是严格 Schema；
+2. 新操作与该公开 Tool 的风险注解相容；
+3. Core Action 拥有独立 permission、approval 和 audit；
+4. 如果风险边界不同，新增一个领域 Tool，而不是塞进万能路由器。
+
+例如进程能力应拆成：
 
 ```text
-list_directory
-stat_path
-read_text_file
-read_text_file_range
-search_files
+process.read       # list / inspect / output
+process.control    # start / stop
 ```
 
-## Write
-
-```text
-write_text_file
-replace_text
-write_files
-apply_patch
-create_directory
-move_path
-delete_path
-```
-
-## Execute
-
-```text
-exec_command
-install_dependencies
-run_project_command
-```
-
-## Recovery
-
-```text
-create_checkpoint
-restore_checkpoint
-```
-
-以后再选配：
-
-```text
-start_process
-read_process_output
-stop_process
-http_request
-```
-
-核心不是工具数量，而是这几个原语足够可靠、结构化、可组合。
+而不是把只读查询、启动、停止和系统进程管理全部放进 `process`。核心目标是同时控制工具目录大小、Schema 复杂度和安全语义，不以“工具数量最少”为唯一指标。
 
 ---
 
 # 13. 推荐实现顺序
 
-## Stage 0：行为锁定测试（Milestone A 前置）
+## Stage 0：历史行为锁定测试（Milestone A 前置，已完成）
 
-在任何大规模重构之前，先把当前 7 个 MCP Tool 的外部 Contract 固定下来。
+这是 Milestone A 重构时采用的历史基线。v0.7.0 经项目所有者授权主动替换了这份外部 Contract；旧 7/23 Tool 不再作为兼容目标，当前契约以第 12 节的 13 个 Compact Domain Tool 为准。
 
 至少锁定：
 
@@ -1110,12 +1102,12 @@ http_request
 2. MCP callback 不再直接操作 fs/process；
 3. 定义统一 Core error code；
 4. 定义 CallerContext / WorkSessionContext；
-5. 保持现有 7 个 Tool 行为不变；
-6. Stage 0 行为锁定测试和现有测试全部通过。
+5. 当时保持 7 个 Tool 行为不变；
+6. 当时的 Stage 0 行为锁定测试和现有测试全部通过。
 
 完成标志：
 
-> 不修改 Core，仅增加 Adapter 就理论上能接入另一个 Agent Host；Stage 0 contract 测试仍全部通过。
+> 不修改 Core，仅增加 Adapter 就理论上能接入另一个 Agent Host。v0.7.0 之后的 Adapter contract 由 13 个 Compact Domain Tool 测试锁定。
 
 ---
 

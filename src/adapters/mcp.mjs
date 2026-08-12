@@ -4,6 +4,10 @@ import { createMcpExpressApp } from "@modelcontextprotocol/sdk/server/express.js
 import { LATEST_PROTOCOL_VERSION } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 
+const relativePath = z.string().min(1).describe("Path relative to the authorized workspace");
+const sha256 = z.string().regex(/^[a-f0-9]{64}$/i);
+const checkpointId = z.string().regex(/^cp_\d{8}T\d{6}Z_[a-f0-9]{8}$/);
+
 function toMcpResult(result) {
   if (result.ok) {
     const response = { content: [{ type: "text", text: result.data.text }] };
@@ -13,12 +17,48 @@ function toMcpResult(result) {
   return { content: [{ type: "text", text: result.error.message }], isError: true };
 }
 
+function action(core, actionId, request, context, summary = "") {
+  return core.execute(actionId, request, context, summary).then(toMcpResult);
+}
+
+function gitStatusArgs(input) {
+  const formatFlag = {
+    short: "--short",
+    porcelain_v1: "--porcelain=v1",
+    porcelain_v2: "--porcelain=v2"
+  }[input.format];
+  return ["status", formatFlag, ...(input.branch ? ["--branch"] : [])];
+}
+
+function gitDiffArgs(input) {
+  const args = ["diff"];
+  if (input.cached) args.push("--cached");
+  const formatFlag = {
+    full: null,
+    stat: "--stat",
+    name_only: "--name-only",
+    name_status: "--name-status"
+  }[input.format];
+  if (formatFlag) args.push(formatFlag);
+  if (input.paths.length) args.push("--", ...input.paths);
+  return args;
+}
+
+function gitLogArgs(input) {
+  const args = ["log", `--max-count=${input.max_count}`];
+  if (input.oneline) args.push("--oneline");
+  if (input.decorate === "yes") args.push("--decorate");
+  if (input.decorate === "no") args.push("--no-decorate");
+  if (input.all) args.push("--all");
+  return args;
+}
+
 function createMcpServer(core, context) {
   const server = new McpServer(
-    { name: "luna-unlimited", version: "0.6.5" },
+    { name: "luna-unlimited", version: "0.7.0" },
     {
       instructions:
-        "Use these tools only inside the configured workspace. Call get_capabilities first. Use stat_path before changing an existing file. Prefer apply_patch with explicit revisions for code edits. Use inspect_artifact/import_artifact/export_artifact for PDF, spreadsheet, and image files; never encode binary bytes into text tools. Create a checkpoint before large recursive deletes."
+        "Call luna.capabilities first. Tools are grouped by domain; select the operation field inside each domain tool. Use workspace.read(stat) before changing an existing file, code.patch for revision-protected code edits, artifact tools for binary files, and checkpoint.write(create) before risky refactors."
     }
   );
 
@@ -27,398 +67,205 @@ function createMcpServer(core, context) {
     new ResourceTemplate("luna-artifact://export/{token}", { list: undefined }),
     {
       title: "Authorized exported workspace artifact",
-      description: "Short-lived content for a file explicitly authorized through export_artifact.",
+      description: "Short-lived content explicitly authorized through artifact.read(operation=export).",
       mimeType: "application/octet-stream"
     },
     async (uri, { token }) => {
       const result = await core.readArtifactResource(String(token), context);
       if (!result.ok) throw new Error(result.error.message);
       return {
-        contents: [{
-          uri: uri.toString(),
-          mimeType: result.data.mimeType,
-          blob: result.data.blob
-        }]
+        contents: [{ uri: uri.toString(), mimeType: result.data.mimeType, blob: result.data.blob }]
       };
     }
   );
 
   server.registerTool(
-    "get_capabilities",
+    "luna.capabilities",
     {
-      title: "Get Luna capabilities",
-      description: "Discover enabled tools, approval requirements, safe workspace alias, limits, and policy revision.",
-      inputSchema: {}
+      title: "Discover Luna capabilities",
+      description: "Return the compact public tool catalog, operation-level permissions, limits, safe workspace alias, and policy revision.",
+      inputSchema: {},
+      annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false }
     },
-    async () => toMcpResult(await core.execute(
-      "get_capabilities",
-      { adapter: "mcp", protocolVersion: LATEST_PROTOCOL_VERSION },
-      context
-    ))
+    async () => action(core, "system.capabilities", {
+      adapter: "mcp",
+      protocolVersion: LATEST_PROTOCOL_VERSION
+    }, context)
   );
 
   server.registerTool(
-    "stat_path",
+    "workspace.read",
     {
-      title: "Stat path",
-      description: "Inspect a workspace path and return type, size, mtime, and SHA-256 revision for writable text files.",
-      inputSchema: {
-        path: z.string().min(1).describe("File or directory path relative to the MCP workspace")
+      title: "Read and inspect the workspace",
+      description: "Perform one read-only workspace operation: list, stat, text, range, or search. Use stat to obtain the SHA-256 revision before writes.",
+      inputSchema: { request: z.discriminatedUnion("operation", [
+        z.object({ operation: z.literal("list"), path: relativePath.default(".") }),
+        z.object({ operation: z.literal("stat"), path: relativePath }),
+        z.object({ operation: z.literal("text"), path: relativePath }),
+        z.object({
+          operation: z.literal("range"),
+          path: relativePath,
+          start_line: z.number().int().min(1),
+          end_line: z.number().int().min(1)
+        }),
+        z.object({
+          operation: z.literal("search"),
+          query: z.string().min(1).max(500),
+          path: relativePath.default("."),
+          glob: z.string().max(200).optional(),
+          search_type: z.enum(["content", "filename"]).default("content"),
+          max_results: z.number().int().min(1).max(200).default(100)
+        })
+      ]) },
+      annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false }
+    },
+    async ({ request: input }) => {
+      if (input.operation === "list") return action(core, "workspace.list", { path: input.path }, context);
+      if (input.operation === "stat") return action(core, "workspace.stat", { path: input.path }, context);
+      if (input.operation === "text") return action(core, "workspace.read_text", { path: input.path }, context);
+      if (input.operation === "range") {
+        return action(core, "workspace.read_range", {
+          path: input.path,
+          startLine: input.start_line,
+          endLine: input.end_line
+        }, context);
       }
-    },
-    async ({ path }) => toMcpResult(await core.execute("stat_path", { path }, context))
-  );
-
-  server.registerTool(
-    "list_directory",
-    {
-      title: "List directory",
-      description: "List files and folders inside the local MCP workspace.",
-      inputSchema: { path: z.string().default(".").describe("Directory path relative to the MCP workspace") }
-    },
-    async ({ path }) => toMcpResult(await core.execute("list_directory", { path }, context))
-  );
-
-  server.registerTool(
-    "read_text_file",
-    {
-      title: "Read text file",
-      description:
-        `Read a UTF-8 text file inside the local MCP workspace. Returns the complete file text plus path, byte count, mtime, and SHA-256 metadata. Files larger than ${core.limits.maxFileBytes} bytes are rejected.`,
-      inputSchema: { path: z.string().min(1).describe("File path relative to the MCP workspace") },
-      outputSchema: {
-        path: z.string(),
-        text: z.string(),
-        bytes: z.number().int().nonnegative(),
-        mtime: z.string(),
-        sha256: z.string().regex(/^[a-f0-9]{64}$/i)
-      }
-    },
-    async ({ path }) => toMcpResult(await core.execute("read_text_file", { path }, context))
-  );
-
-  server.registerTool(
-    "read_text_file_range",
-    {
-      title: "Read text file range",
-      description: "Read a 1-based inclusive line range from a UTF-8 text file. At most 1000 lines are returned.",
-      inputSchema: {
-        path: z.string().min(1).describe("File path relative to the MCP workspace"),
-        start_line: z.number().int().min(1).describe("First line to read, starting at 1"),
-        end_line: z.number().int().min(1).describe("Last line to read, inclusive")
-      }
-    },
-    async ({ path, start_line, end_line }) => toMcpResult(await core.execute(
-      "read_text_file_range",
-      { path, startLine: start_line, endLine: end_line },
-      context
-    ))
-  );
-
-  server.registerTool(
-    "search_files",
-    {
-      title: "Search files",
-      description: "Search UTF-8 file contents with ripgrep, or search file names, inside the authorized workspace.",
-      inputSchema: {
-        query: z.string().min(1).max(500).describe("Literal text or file-name fragment to search for"),
-        path: z.string().default(".").describe("Directory path relative to the MCP workspace"),
-        glob: z.string().max(200).optional().describe("Optional ripgrep glob such as *.go or **/*.ts"),
-        search_type: z.enum(["content", "filename"]).default("content"),
-        max_results: z.number().int().min(1).max(200).default(100)
-      }
-    },
-    async ({ query, path, glob, search_type, max_results }) => toMcpResult(await core.execute(
-      "search_files",
-      { query, path, glob, searchType: search_type, maxResults: max_results },
-      context
-    ))
-  );
-
-  server.registerTool(
-    "write_text_file",
-    {
-      title: "Write text file",
-      description: "Create or replace a UTF-8 text file inside the local MCP workspace. Parent directories are created automatically.",
-      inputSchema: {
-        path: z.string().min(1).describe("File path relative to the MCP workspace"),
-        content: z.string().describe("Complete UTF-8 content to write")
-      }
-    },
-    async ({ path, content }) => {
-      const bytes = Buffer.byteLength(content, "utf8");
-      return toMcpResult(await core.execute(
-        "write_text_file",
-        { path, content },
-        context,
-        `Write ${bytes} bytes to ${path}`
-      ));
+      return action(core, "workspace.search", {
+        query: input.query,
+        path: input.path,
+        glob: input.glob,
+        searchType: input.search_type,
+        maxResults: input.max_results
+      }, context);
     }
   );
 
   server.registerTool(
-    "replace_text",
+    "workspace.write",
     {
-      title: "Replace text safely",
-      description: "Replace exact text in one UTF-8 file only when the match count equals expected_replacements.",
-      inputSchema: {
-        path: z.string().min(1).describe("File path relative to the MCP workspace"),
-        old_text: z.string().min(1).describe("Exact text to find"),
-        new_text: z.string().describe("Replacement text"),
-        expected_replacements: z.number().int().min(1).max(100).default(1)
-      }
-    },
-    async ({ path, old_text, new_text, expected_replacements }) => toMcpResult(await core.execute(
-      "replace_text",
-      { path, oldText: old_text, newText: new_text, expectedReplacements: expected_replacements },
-      context,
-      `Replace ${expected_replacements} occurrence(s) in ${path}`
-    ))
-  );
-
-  server.registerTool(
-    "write_files",
-    {
-      title: "Write multiple files safely",
-      description:
-        "Atomically create or update up to 50 UTF-8 files. Existing files require expected_sha256 from stat_path; all files are validated before commit and failures roll back committed files.",
-      inputSchema: {
-        files: z.array(z.object({
-          path: z.string().min(1).describe("Target path relative to the MCP workspace"),
-          content: z.string().describe("Complete UTF-8 content"),
-          expected_sha256: z.string().regex(/^[a-f0-9]{64}$/i).optional()
-            .describe("Required when updating an existing file; obtain it from stat_path")
-        })).min(1).max(50)
-      }
-    },
-    async ({ files }) => toMcpResult(await core.execute(
-      "write_files",
-      {
-        files: files.map((file) => ({
-          path: file.path,
-          content: file.content,
-          expectedSha256: file.expected_sha256
-        }))
-      },
-      context,
-      `Create or safely update ${files.length} file(s)`
-    ))
-  );
-
-  server.registerTool(
-    "apply_patch",
-    {
-      title: "Apply an atomic unified diff",
-      description:
-        "Dry-run or atomically apply a multi-file unified diff. Every touched path requires an expected_files entry: use the current stat_path SHA-256 for an existing file, or null for a new file. All paths, revisions, and hunk contexts are validated before commit; a commit failure rolls back earlier changes.",
-      inputSchema: {
-        patch: z.string().min(1).describe("Unified diff with ---/+++ headers and @@ hunks; supports create, update, and delete"),
-        expected_files: z.array(z.object({
-          path: z.string().min(1).describe("Touched path relative to the MCP workspace"),
-          sha256: z.string().regex(/^[a-f0-9]{64}$/i).nullable()
-            .describe("Current SHA-256 for an existing file, or null only when the path must be new")
-        })).min(1).max(50),
-        dry_run: z.boolean().default(false).describe("Validate and preview without changing the workspace")
-      },
-      outputSchema: {
-        dryRun: z.boolean(),
-        committed: z.boolean(),
-        rolledBack: z.boolean(),
-        files: z.array(z.object({
-          path: z.string(),
-          action: z.enum(["created", "updated", "deleted"]),
-          beforeSha256: z.string().nullable(),
-          afterSha256: z.string().nullable(),
-          bytes: z.number().int().nonnegative(),
-          addedLines: z.number().int().nonnegative(),
-          removedLines: z.number().int().nonnegative()
-        })),
-        totals: z.object({
-          files: z.number().int().nonnegative(),
-          bytes: z.number().int().nonnegative(),
-          addedLines: z.number().int().nonnegative(),
-          removedLines: z.number().int().nonnegative()
-        })
-      }
-    },
-    async ({ patch, expected_files, dry_run }) => toMcpResult(await core.execute(
-      "apply_patch",
-      {
-        patch,
-        expectedFiles: expected_files.map((file) => ({ path: file.path, sha256: file.sha256 })),
-        dryRun: dry_run
-      },
-      context,
-      `${dry_run ? "Dry-run" : "Apply"} an atomic unified diff touching ${expected_files.length} file(s)`
-    ))
-  );
-
-  server.registerTool(
-    "create_directory",
-    {
-      title: "Create a workspace directory",
-      description: "Create a directory and missing parents inside the authorized workspace. Existing directories are an idempotent success.",
-      inputSchema: {
-        path: z.string().min(1).describe("Directory path relative to the MCP workspace")
-      },
-      outputSchema: {
-        path: z.string(),
-        created: z.boolean()
-      },
+      title: "Create and update workspace text",
+      description: "Perform one non-destructive text operation: text, replace, many, or mkdir. Existing files in many require SHA-256 revisions.",
+      inputSchema: { request: z.discriminatedUnion("operation", [
+        z.object({ operation: z.literal("text"), path: relativePath, content: z.string() }),
+        z.object({
+          operation: z.literal("replace"),
+          path: relativePath,
+          old_text: z.string().min(1),
+          new_text: z.string(),
+          expected_replacements: z.number().int().min(1).max(100).default(1)
+        }),
+        z.object({
+          operation: z.literal("many"),
+          files: z.array(z.object({
+            path: relativePath,
+            content: z.string(),
+            expected_sha256: sha256.optional()
+          })).min(1).max(50)
+        }),
+        z.object({ operation: z.literal("mkdir"), path: relativePath })
+      ]) },
       annotations: { readOnlyHint: false, openWorldHint: false, destructiveHint: false }
     },
-    async ({ path }) => toMcpResult(await core.execute(
-      "create_directory",
-      { path },
-      context,
-      `Create workspace directory ${path}`
-    ))
+    async ({ request: input }) => {
+      if (input.operation === "text") {
+        return action(core, "workspace.write_text", { path: input.path, content: input.content }, context,
+          `Write ${Buffer.byteLength(input.content, "utf8")} bytes to ${input.path}`);
+      }
+      if (input.operation === "replace") {
+        return action(core, "workspace.replace_text", {
+          path: input.path,
+          oldText: input.old_text,
+          newText: input.new_text,
+          expectedReplacements: input.expected_replacements
+        }, context, `Replace ${input.expected_replacements} occurrence(s) in ${input.path}`);
+      }
+      if (input.operation === "many") {
+        return action(core, "workspace.write_many", {
+          files: input.files.map((file) => ({
+            path: file.path,
+            content: file.content,
+            expectedSha256: file.expected_sha256
+          }))
+        }, context, `Create or safely update ${input.files.length} file(s)`);
+      }
+      return action(core, "workspace.mkdir", { path: input.path }, context, `Create directory ${input.path}`);
+    }
   );
 
   server.registerTool(
-    "move_path",
+    "workspace.manage",
     {
-      title: "Move a workspace path",
-      description:
-        "Atomically move a regular file or safe directory inside the workspace. Files require expected_sha256. Overwriting an existing file additionally requires expected_destination_sha256. Sensitive paths and symlink-containing trees are rejected.",
-      inputSchema: {
-        source: z.string().min(1).describe("Existing source path relative to the workspace"),
-        destination: z.string().min(1).describe("Destination path relative to the workspace"),
-        overwrite: z.boolean().default(false),
-        expected_sha256: z.string().regex(/^[a-f0-9]{64}$/i).optional()
-          .describe("Required when source is a file; obtain it from stat_path or inspect_artifact"),
-        expected_destination_sha256: z.string().regex(/^[a-f0-9]{64}$/i).optional()
-          .describe("Required when overwrite=true and destination is an existing file")
-      },
-      outputSchema: {
-        source: z.string(),
-        destination: z.string(),
-        type: z.enum(["file", "directory"]),
-        overwritten: z.boolean(),
-        entries: z.number().int().nonnegative(),
-        bytes: z.number().int().nonnegative(),
-        sha256: z.string().nullable(),
-        cleanupPending: z.boolean()
-      },
-      annotations: { readOnlyHint: false, openWorldHint: false, destructiveHint: true }
-    },
-    async ({ source, destination, overwrite, expected_sha256, expected_destination_sha256 }) => toMcpResult(await core.execute(
-      "move_path",
-      {
-        source,
-        destination,
-        overwrite,
-        expectedSha256: expected_sha256,
-        expectedDestinationSha256: expected_destination_sha256
-      },
-      context,
-      `Move ${source} to ${destination}${overwrite ? " and overwrite the existing destination" : ""}`
-    ))
-  );
-
-  server.registerTool(
-    "delete_path",
-    {
-      title: "Delete a workspace path",
-      description:
-        "Permanently delete a regular file or directory inside the workspace. Files require expected_sha256. Non-empty directories require recursive=true. Sensitive paths, symlinks, and workspace-root deletion are rejected. Create a checkpoint first when recovery may be needed.",
-      inputSchema: {
-        path: z.string().min(1).describe("Path relative to the MCP workspace"),
-        recursive: z.boolean().default(false),
-        expected_sha256: z.string().regex(/^[a-f0-9]{64}$/i).optional()
-          .describe("Required when deleting a file; obtain it from stat_path or inspect_artifact")
-      },
-      outputSchema: {
-        path: z.string(),
-        type: z.enum(["file", "directory"]),
-        recursive: z.boolean(),
-        entries: z.number().int().nonnegative(),
-        bytes: z.number().int().nonnegative(),
-        sha256: z.string().nullable(),
-        deleted: z.boolean(),
-        cleanupPending: z.boolean()
-      },
-      annotations: { readOnlyHint: false, openWorldHint: false, destructiveHint: true }
-    },
-    async ({ path, recursive, expected_sha256 }) => toMcpResult(await core.execute(
-      "delete_path",
-      { path, recursive, expectedSha256: expected_sha256 },
-      context,
-      `Permanently delete ${path}${recursive ? " recursively" : ""}`
-    ))
-  );
-
-  server.registerTool(
-    "inspect_artifact",
-    {
-      title: "Inspect a binary workspace artifact",
-      description:
-        "Inspect a PDF, spreadsheet, image, or other regular binary file without returning its raw bytes. Returns detected MIME type, size, SHA-256, and available image/PDF metadata.",
-      inputSchema: {
-        path: z.string().min(1).describe("Artifact path relative to the MCP workspace")
-      },
-      annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false }
-    },
-    async ({ path }) => toMcpResult(await core.execute("inspect_artifact", { path }, context))
-  );
-
-  server.registerTool(
-    "import_artifact",
-    {
-      title: "Save an authorized web file to the workspace",
-      description:
-        "Import a Host-authorized file or generated artifact into the workspace as PDF, XLS/XLSX, PNG, JPEG, GIF, or WebP. Pass the actual Host file through the file input; do not copy its file_id into an ordinary string. ChatGPT rewrites a proxied mount at this declared fileParams path into download_url and file_id before MCP delivery. Luna then blocks local/private sources, validates signatures and size, and commits atomically. expected_sha256 must be null for a new destination or the current digest when overwriting.",
-      inputSchema: {
-        file: z.object({
-          download_url: z.string().url(),
-          file_id: z.string().min(1),
-          mime_type: z.string().optional(),
-          file_name: z.string().optional()
+      title: "Move or delete workspace paths",
+      description: "Perform a destructive path operation: move or delete. Files require current SHA-256 revisions; sensitive paths and symlinks are rejected.",
+      inputSchema: { request: z.discriminatedUnion("operation", [
+        z.object({
+          operation: z.literal("move"),
+          source: relativePath,
+          destination: relativePath,
+          overwrite: z.boolean().default(false),
+          expected_sha256: sha256.optional(),
+          expected_destination_sha256: sha256.optional()
         }),
-        destination: z.string().min(1).describe("Destination path relative to the workspace, including an allowed extension"),
-        expected_sha256: z.string().regex(/^[a-f0-9]{64}$/i).nullable()
-          .describe("Current destination SHA-256, or null only when destination must not exist")
-      },
-      _meta: {
-        "openai/fileParams": ["file"]
-      },
-      annotations: { readOnlyHint: false, openWorldHint: true, destructiveHint: false }
+        z.object({
+          operation: z.literal("delete"),
+          path: relativePath,
+          recursive: z.boolean().default(false),
+          expected_sha256: sha256.optional()
+        })
+      ]) },
+      annotations: { readOnlyHint: false, openWorldHint: false, destructiveHint: true }
     },
-    async ({ file, destination, expected_sha256 }) => toMcpResult(await core.execute(
-      "import_artifact",
-      {
-        source: {
-          url: file.download_url,
-          id: file.file_id,
-          mimeType: file.mime_type,
-          fileName: file.file_name
-        },
-        destination,
-        expectedSha256: expected_sha256
-      },
-      context,
-      `Import authorized file ${file.file_name || file.file_id} to ${destination}`
-    ))
+    async ({ request: input }) => {
+      if (input.operation === "move") {
+        return action(core, "workspace.move", {
+          source: input.source,
+          destination: input.destination,
+          overwrite: input.overwrite,
+          expectedSha256: input.expected_sha256,
+          expectedDestinationSha256: input.expected_destination_sha256
+        }, context, `Move ${input.source} to ${input.destination}${input.overwrite ? " with overwrite" : ""}`);
+      }
+      return action(core, "workspace.delete", {
+        path: input.path,
+        recursive: input.recursive,
+        expectedSha256: input.expected_sha256
+      }, context, `Permanently delete ${input.path}${input.recursive ? " recursively" : ""}`);
+    }
   );
 
   server.registerTool(
-    "export_artifact",
+    "code.patch",
     {
-      title: "Export a workspace artifact to the Host",
-      description:
-        "Create a short-lived, revision-bound MCP resource link for a workspace PDF, spreadsheet, image, or other regular file. The resource read fails if the file changes after link creation.",
+      title: "Apply an atomic code patch",
+      description: "Dry-run or atomically apply a multi-file unified diff with explicit SHA-256 expectations and rollback on commit failure.",
       inputSchema: {
-        path: z.string().min(1).describe("Artifact path relative to the MCP workspace")
+        patch: z.string().min(1),
+        expected_files: z.array(z.object({ path: relativePath, sha256: sha256.nullable() })).min(1).max(50),
+        dry_run: z.boolean().default(false)
       },
+      annotations: { readOnlyHint: false, openWorldHint: false, destructiveHint: true }
+    },
+    async ({ patch, expected_files, dry_run }) => action(core, "code.apply_patch", {
+      patch,
+      expectedFiles: expected_files.map((file) => ({ path: file.path, sha256: file.sha256 })),
+      dryRun: dry_run
+    }, context, `${dry_run ? "Dry-run" : "Apply"} atomic patch touching ${expected_files.length} file(s)`)
+  );
+
+  server.registerTool(
+    "artifact.read",
+    {
+      title: "Inspect or export an artifact",
+      description: "Inspect binary metadata or export a revision-bound workspace file to the connected Host.",
+      inputSchema: { request: z.discriminatedUnion("operation", [
+        z.object({ operation: z.literal("inspect"), path: relativePath }),
+        z.object({ operation: z.literal("export"), path: relativePath })
+      ]) },
       annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false }
     },
-    async ({ path }) => {
-      const result = await core.execute(
-        "export_artifact",
-        { path },
-        context,
-        `Export ${path} to the connected Host`
-      );
+    async ({ request: input }) => {
+      if (input.operation === "inspect") return action(core, "artifact.inspect", { path: input.path }, context);
+      const result = await core.execute("artifact.export", { path: input.path }, context, `Export ${input.path}`);
       const response = toMcpResult(result);
       if (result.ok) {
         response.content.push({
@@ -435,195 +282,186 @@ function createMcpServer(core, context) {
   );
 
   server.registerTool(
-    "create_checkpoint",
+    "artifact.import",
     {
-      title: "Create workspace checkpoint",
-      description:
-        "Create a non-Git local snapshot of the authorized workspace before a risky edit. Sensitive paths, .git internals, and node_modules are excluded. Snapshot storage stays outside the workspace.",
+      title: "Import an authorized Host artifact",
+      description: "Save a Host-authorized PDF, spreadsheet or image into the workspace after public-source, signature, type, size and revision validation.",
       inputSchema: {
-        label: z.string().max(120).optional().describe("Optional human-readable checkpoint label")
+        file: z.object({
+          download_url: z.string().url(),
+          file_id: z.string().min(1),
+          mime_type: z.string().optional(),
+          file_name: z.string().optional()
+        }),
+        destination: relativePath,
+        expected_sha256: sha256.nullable()
       },
-      outputSchema: {
-        id: z.string(),
-        label: z.string().nullable(),
-        createdAt: z.string(),
-        backend: z.literal("local-snapshot"),
-        files: z.number().int().nonnegative(),
-        directories: z.number().int().nonnegative(),
-        bytes: z.number().int().nonnegative(),
-        excluded: z.object({
-          sensitive: z.number().int().nonnegative(),
-          dependencies: z.number().int().nonnegative(),
-          runtime: z.number().int().nonnegative(),
-          other: z.number().int().nonnegative()
-        })
-      }
+      _meta: { "openai/fileParams": ["file"] },
+      annotations: { readOnlyHint: false, openWorldHint: true, destructiveHint: false }
     },
-    async ({ label }) => toMcpResult(await core.execute(
-      "create_checkpoint",
-      { label },
-      context,
-      `Create a local workspace checkpoint${label ? `: ${label}` : ""}`
-    ))
+    async ({ file, destination, expected_sha256 }) => action(core, "artifact.import", {
+      source: {
+        url: file.download_url,
+        id: file.file_id,
+        mimeType: file.mime_type,
+        fileName: file.file_name
+      },
+      destination,
+      expectedSha256: expected_sha256
+    }, context, `Import authorized file ${file.file_name || "artifact"} to ${destination}`)
   );
 
   server.registerTool(
-    "list_checkpoints",
+    "checkpoint.read",
     {
       title: "List workspace checkpoints",
-      description: "List safe metadata for checkpoints belonging to the current authorized workspace.",
+      description: "List safe metadata for private local-snapshot checkpoints belonging to this workspace.",
       inputSchema: {},
-      outputSchema: {
-        checkpoints: z.array(z.object({
-          id: z.string(),
-          label: z.string().nullable(),
-          createdAt: z.string(),
-          backend: z.literal("local-snapshot"),
-          files: z.number().int().nonnegative(),
-          directories: z.number().int().nonnegative(),
-          bytes: z.number().int().nonnegative(),
-          excluded: z.object({
-            sensitive: z.number().int().nonnegative(),
-            dependencies: z.number().int().nonnegative(),
-            runtime: z.number().int().nonnegative(),
-            other: z.number().int().nonnegative()
-          })
-        })),
-        total: z.number().int().nonnegative(),
-        invalid: z.number().int().nonnegative()
-      }
+      annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false }
     },
-    async () => toMcpResult(await core.execute("list_checkpoints", {}, context))
+    async () => action(core, "checkpoint.list", {}, context)
   );
 
   server.registerTool(
-    "restore_checkpoint",
+    "checkpoint.write",
     {
-      title: "Restore workspace checkpoint",
-      description:
-        "Transactionally restore the authorized workspace to a local snapshot. New managed files are removed; sensitive paths and node_modules are preserved. A failed restore rolls back to the pre-restore state.",
-      inputSchema: {
-        checkpoint_id: z.string().regex(/^cp_\d{8}T\d{6}Z_[a-f0-9]{8}$/)
-      },
-      outputSchema: {
-        id: z.string(),
-        label: z.string().nullable(),
-        restoredAt: z.string(),
-        backend: z.literal("local-snapshot"),
-        writtenFiles: z.number().int().nonnegative(),
-        deletedFiles: z.number().int().nonnegative(),
-        removedDirectories: z.number().int().nonnegative(),
-        files: z.number().int().nonnegative(),
-        bytes: z.number().int().nonnegative(),
-        rolledBack: z.boolean()
-      }
+      title: "Create, restore or delete a checkpoint",
+      description: "Create a private snapshot, transactionally restore one, or permanently delete checkpoint storage.",
+      inputSchema: { request: z.discriminatedUnion("operation", [
+        z.object({ operation: z.literal("create"), label: z.string().max(120).optional() }),
+        z.object({ operation: z.literal("restore"), checkpoint_id: checkpointId }),
+        z.object({ operation: z.literal("delete"), checkpoint_id: checkpointId })
+      ]) },
+      annotations: { readOnlyHint: false, openWorldHint: false, destructiveHint: true }
     },
-    async ({ checkpoint_id }) => toMcpResult(await core.execute(
-      "restore_checkpoint",
-      { checkpointId: checkpoint_id },
-      context,
-      `Restore workspace checkpoint ${checkpoint_id}; managed files created later may be removed`
-    ))
-  );
-
-  server.registerTool(
-    "delete_checkpoint",
-    {
-      title: "Delete workspace checkpoint",
-      description: "Permanently delete one private checkpoint for the current workspace. This does not modify workspace files.",
-      inputSchema: {
-        checkpoint_id: z.string().regex(/^cp_\d{8}T\d{6}Z_[a-f0-9]{8}$/)
-      },
-      outputSchema: {
-        id: z.string(),
-        label: z.string().nullable(),
-        deleted: z.boolean()
+    async ({ request: input }) => {
+      if (input.operation === "create") {
+        return action(core, "checkpoint.create", { label: input.label }, context,
+          `Create checkpoint${input.label ? `: ${input.label}` : ""}`);
       }
-    },
-    async ({ checkpoint_id }) => toMcpResult(await core.execute(
-      "delete_checkpoint",
-      { checkpointId: checkpoint_id },
-      context,
-      `Permanently delete private checkpoint ${checkpoint_id}`
-    ))
-  );
-
-  server.registerTool(
-    "exec_command",
-    {
-      title: "Execute approved development command",
-      description:
-        "Run a non-interactive allowlisted Git, Go, or npm build/test command inside the authorized workspace project boundary. Shell syntax, redirection, pipes, arbitrary programs, and parent project discovery are not accepted.",
-      inputSchema: {
-        program: z.enum(["git", "go", "npm"]),
-        args: z.array(z.string()).min(1).max(50).describe("Argument array, for example [\"status\", \"--short\"]"),
-        cwd: z.string().default(".").describe("Working directory relative to the MCP workspace"),
-        timeout_seconds: z.number().int().min(1).max(300).default(120)
+      if (input.operation === "restore") {
+        return action(core, "checkpoint.restore", { checkpointId: input.checkpoint_id }, context,
+          `Restore checkpoint ${input.checkpoint_id}; newer managed files may be removed`);
       }
-    },
-    async ({ program, args, cwd, timeout_seconds }) => {
-      const displayCommand = [program, ...args].map((value) => (/\s/.test(value) ? JSON.stringify(value) : value)).join(" ");
-      return toMcpResult(await core.execute(
-        "exec_command",
-        { program, args, cwd, timeoutSeconds: timeout_seconds },
-        context,
-        `Run ${displayCommand} in ${cwd}`
-      ));
+      return action(core, "checkpoint.delete", { checkpointId: input.checkpoint_id }, context,
+        `Permanently delete checkpoint ${input.checkpoint_id}`);
     }
   );
 
   server.registerTool(
-    "install_dependencies",
+    "git.read",
     {
-      title: "Install project dependencies safely",
-      description:
-        "Install npm dependencies declared in package.json using the public npm registry with lifecycle scripts, audit, and funding hooks disabled. This is a network and workspace mutation operation.",
-      inputSchema: {
-        package_manager: z.literal("npm").default("npm"),
-        mode: z.enum(["auto", "install", "ci"]).default("auto")
-          .describe("auto uses npm ci when package-lock.json exists, otherwise npm install"),
-        cwd: z.string().default(".").describe("Project directory relative to the MCP workspace"),
-        timeout_seconds: z.number().int().min(1).max(600).default(300)
-      }
+      title: "Read Git repository state",
+      description: "Run a typed, read-only Git operation inside the workspace boundary: status, diff, or log. Arbitrary Git arguments are not accepted.",
+      inputSchema: { request: z.discriminatedUnion("operation", [
+        z.object({
+          operation: z.literal("status"),
+          cwd: relativePath.default("."),
+          format: z.enum(["short", "porcelain_v1", "porcelain_v2"]).default("short"),
+          branch: z.boolean().default(false),
+          timeout_seconds: z.number().int().min(1).max(60).default(15)
+        }),
+        z.object({
+          operation: z.literal("diff"),
+          cwd: relativePath.default("."),
+          cached: z.boolean().default(false),
+          format: z.enum(["full", "stat", "name_only", "name_status"]).default("full"),
+          paths: z.array(relativePath).max(50).default([]),
+          timeout_seconds: z.number().int().min(1).max(60).default(15)
+        }),
+        z.object({
+          operation: z.literal("log"),
+          cwd: relativePath.default("."),
+          max_count: z.number().int().min(1).max(100).default(20),
+          oneline: z.boolean().default(true),
+          decorate: z.enum(["auto", "yes", "no"]).default("auto"),
+          all: z.boolean().default(false),
+          timeout_seconds: z.number().int().min(1).max(60).default(15)
+        })
+      ]) },
+      annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false }
     },
-    async ({ package_manager, mode, cwd, timeout_seconds }) => toMcpResult(await core.execute(
-      "install_dependencies",
-      { packageManager: package_manager, mode, cwd, timeoutSeconds: timeout_seconds },
-      context,
-      `Install ${package_manager} dependencies in ${cwd} with lifecycle scripts disabled`
-    ))
+    async ({ request: input }) => {
+      const args = input.operation === "status"
+        ? gitStatusArgs(input)
+        : input.operation === "diff" ? gitDiffArgs(input) : gitLogArgs(input);
+      return action(core, `git.${input.operation}`, {
+        args,
+        cwd: input.cwd,
+        timeoutSeconds: input.timeout_seconds
+      }, context);
+    }
   );
 
   server.registerTool(
-    "clone_repository",
+    "git.remote",
     {
-      title: "Clone a public GitHub repository safely",
-      description:
-        "Clone one public github.com repository over credential-free HTTPS into a new directory inside the authorized workspace. The operation is shallow, single-branch, non-interactive, does not initialize submodules or Git LFS objects, rejects redirects and credentials, enforces filesystem limits, validates HEAD, and commits the destination atomically.",
-      inputSchema: {
-        url: z.string().url().describe("Public repository URL in the form https://github.com/owner/repository"),
-        destination: z.string().min(1).describe("New destination directory relative to the MCP workspace"),
-        ref: z.string().min(1).max(255).optional().describe("Optional public branch or tag name"),
-        depth: z.number().int().min(1).max(50).default(1),
-        timeout_seconds: z.number().int().min(1).max(600).default(180)
-      },
-      outputSchema: {
-        repository: z.string(),
-        destination: z.string(),
-        ref: z.string().nullable(),
-        commit: z.string(),
-        depth: z.number().int(),
-        shallow: z.boolean(),
-        files: z.number().int(),
-        bytes: z.number().int()
-      }
+      title: "Import from a Git remote",
+      description: "Perform a typed Git network operation. v0.7 supports only safe public GitHub clone into a new workspace directory.",
+      inputSchema: { request: z.discriminatedUnion("operation", [
+        z.object({
+          operation: z.literal("clone"),
+          url: z.string().url(),
+          destination: relativePath,
+          ref: z.string().min(1).max(255).optional(),
+          depth: z.number().int().min(1).max(50).default(1),
+          timeout_seconds: z.number().int().min(1).max(600).default(180)
+        })
+      ]) },
+      annotations: { readOnlyHint: false, openWorldHint: true, destructiveHint: false }
     },
-    async ({ url, destination, ref, depth, timeout_seconds }) => toMcpResult(await core.execute(
-      "clone_repository",
-      { url, destination, ref: ref ?? null, depth, timeoutSeconds: timeout_seconds },
-      context,
-      `Clone public GitHub repository into ${destination}`
-    ))
+    async ({ request: { url, destination, ref, depth, timeout_seconds } }) => action(core, "git.clone", {
+      url,
+      destination,
+      ref: ref ?? null,
+      depth,
+      timeoutSeconds: timeout_seconds
+    }, context, `Clone public GitHub repository into ${destination}`)
+  );
+
+  server.registerTool(
+    "project.execute",
+    {
+      title: "Execute an approved project command",
+      description: "Run an allowlisted npm or Go build/test command inside the selected workspace project. Shell syntax and arbitrary programs are rejected.",
+      inputSchema: {
+        program: z.enum(["go", "npm"]),
+        args: z.array(z.string()).min(1).max(50),
+        cwd: relativePath.default("."),
+        timeout_seconds: z.number().int().min(1).max(300).default(120)
+      },
+      annotations: { readOnlyHint: false, openWorldHint: false, destructiveHint: false }
+    },
+    async ({ program, args, cwd, timeout_seconds }) => {
+      const display = [program, ...args].map((value) => (/\s/.test(value) ? JSON.stringify(value) : value)).join(" ");
+      return action(core, "project.execute", {
+        program,
+        args,
+        cwd,
+        timeoutSeconds: timeout_seconds
+      }, context, `Run ${display} in ${cwd}`);
+    }
+  );
+
+  server.registerTool(
+    "project.dependencies",
+    {
+      title: "Install project dependencies",
+      description: "Install npm dependencies with lifecycle scripts, audit and funding hooks disabled. This uses the public npm registry and mutates the workspace.",
+      inputSchema: {
+        package_manager: z.literal("npm").default("npm"),
+        mode: z.enum(["auto", "install", "ci"]).default("auto"),
+        cwd: relativePath.default("."),
+        timeout_seconds: z.number().int().min(1).max(600).default(300)
+      },
+      annotations: { readOnlyHint: false, openWorldHint: true, destructiveHint: false }
+    },
+    async ({ package_manager, mode, cwd, timeout_seconds }) => action(core, "project.install_dependencies", {
+      packageManager: package_manager,
+      mode,
+      cwd,
+      timeoutSeconds: timeout_seconds
+    }, context, `Install ${package_manager} dependencies in ${cwd} with lifecycle scripts disabled`)
   );
 
   return server;

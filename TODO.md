@@ -1,6 +1,6 @@
 # Luna Unlimited · 后续迭代 TODO
 
-> 基线版本：v0.6.5（2026-08-12）
+> 基线版本：v0.7.0（2026-08-12）
 >
 > 当前里程碑：**可靠工程编辑闭环**。任意兼容 Host 已能在单个授权 workspace 内完成 capability discovery、代码读取与搜索、带 revision 的原子修改、依赖安装、构建/测试、checkpoint/restore，以及 Artifact 双向传输。这个基线已经能够支持人工发起、Agent 持续调用工具的中等规模工程开发。
 
@@ -15,8 +15,9 @@
 - [x] v0.6.0：目录创建、移动、受保护删除和 Artifact 双向传输。
 - [x] v0.6.4：正式 Host `fileParams` 导入链路、DNS pinning 与 Node 22 HTTPS 兼容。
 - [x] v0.6.5：受限公开 GitHub `clone_repository`，包含无凭据 HTTPS、DNS/Host 策略、临时目录校验、大小限制、原子提交、审批和审计。
+- [x] v0.7.0：破坏性 Compact Domain Tool 重构。公开 MCP Tool 从 23 个收敛为 13 个，旧平铺 Tool 全部删除；26 个细粒度 Core Action 独立承载 permission、approval、risk 和 audit；多操作 Schema 通过 `request.oneOf` 对 Host 可见。
 
-## v0.7 · 持久安全策略与项目任务
+## v0.8 · 持久安全策略与项目任务
 
 目标：重启后权限不漂移，并让工程命令来自本机可信策略，而不是仅依赖 Agent 可修改的项目脚本。
 
@@ -33,12 +34,12 @@
 
 > 服务重启后权限和审批状态保持一致；无效配置安全降级；Agent 只能执行本机 policy 明确授权且可审计的项目任务，不能通过修改 `package.json` 绕过策略。
 
-## v0.8 · 长期进程与本地服务调试
+## v0.9 · 长期进程与本地服务调试
 
 目标：补齐“启动项目 → 观察输出 → 调接口 → 修改 → 重试”的开发循环。
 
 - [ ] 实现 `start_process`、`list_processes`、`get_process`、`read_process_output`、`stop_process`。
-- [ ] 只允许启动 v0.7 中授权的 project task；禁止裸 shell 和任意系统命令。
+- [ ] 只允许启动 v0.8 中授权的 project task；禁止裸 shell 和任意系统命令。
 - [ ] Luna 只能管理自己启动的进程，并记录 owner session、PID、task revision 和 cwd。
 - [ ] 增加 TTL、并发上限、输出环形缓冲、输出截断、超时和退出状态。
 - [ ] Luna 退出时采用明确的子进程清理策略，异常重启后识别并处理孤儿状态。
@@ -50,7 +51,7 @@
 
 > Agent 可以安全启动开发服务器、读取日志、请求本地接口、修改代码后重新验证，并且不能管理 Luna 之外的系统进程或访问未授权网络。
 
-## v0.9 · 结构化文档与媒体处理
+## v0.10 · 结构化文档与媒体处理
 
 目标：从“可靠传输二进制文件”升级到“在 workspace 内可靠读取、生成和修改常见办公文件”。
 
@@ -66,7 +67,7 @@
 
 > Agent 能在不把真实绝对路径或秘密暴露给 Host 的前提下，读取和修改常见 Excel、提取/渲染 PDF、处理图片，并把校验后的结果导出回 Host。
 
-## v0.10 · 多 workspace、会话与可观测性
+## v0.11 · 多 workspace、会话与可观测性
 
 目标：让多个项目和多个 Agent 可控共存，同时保持单一 Core 安全模型。
 

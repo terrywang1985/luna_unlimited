@@ -245,7 +245,7 @@
     <section class="grid">
       <div class="stack">
         <article class="panel">
-          <div class="panel-head"><h2>工具权限</h2><span class="hint">即时生效</span></div>
+          <div class="panel-head"><h2>操作权限</h2><span class="hint">按细粒度 Action 即时生效</span></div>
           <div id="permissions" class="panel-body"><div class="empty">正在加载权限</div></div>
         </article>
 
@@ -323,13 +323,13 @@
       $("liveText").textContent = data.server.ready && data.tunnel.ready ? "链路正常" : "部分服务未就绪";
       $("liveDot").classList.toggle("ok", data.server.ready && data.tunnel.ready);
 
-      $("permissions").innerHTML = data.permissions.map((permission) => `
+      $("permissions").innerHTML = data.actions.map((permission) => `
         <div class="permission">
           <div>
             <div class="permission-name">${escapeHtml(permission.label)}<span class="tag ${permission.level === "write" ? "write" : ["execute", "delete", "network"].includes(permission.level) ? "execute" : ""}">${escapeHtml(permission.level)}</span></div>
-            <div class="permission-meta">${escapeHtml(permission.name)}</div>
+            <div class="permission-meta">${escapeHtml(permission.id)} · ${escapeHtml(permission.publicTool)}(${escapeHtml(permission.operation)})</div>
           </div>
-          <button class="button toggle ${permission.enabled ? "on" : "off"}" type="button" data-tool="${escapeHtml(permission.name)}" data-enabled="${permission.enabled}">
+          <button class="button toggle ${permission.enabled ? "on" : "off"}" type="button" data-action="${escapeHtml(permission.id)}" data-enabled="${permission.enabled}">
             ${permission.enabled ? "已启用" : "已禁用"}
           </button>
         </div>`).join("");
@@ -353,7 +353,7 @@
       const pendingHtml = approvals.pending.length
         ? `<div class="approval-list">${approvals.pending.map((approval) => `
             <div class="approval-item">
-              <div class="permission-name">${escapeHtml(approval.tool)}</div>
+              <div class="permission-name">${escapeHtml(approval.action)}</div>
               <div class="approval-summary">${escapeHtml(approval.summary)}</div>
               <div class="approval-actions">
                 <button class="button approve" type="button" data-approval-id="${escapeHtml(approval.id)}" data-decision="approve">允许</button>
@@ -416,12 +416,12 @@
     }
 
     $("permissions").addEventListener("click", async (event) => {
-      const button = event.target.closest("button[data-tool]");
+      const button = event.target.closest("button[data-action]");
       if (!button) return;
       button.disabled = true;
       const enabled = button.dataset.enabled !== "true";
       try {
-        const response = await fetch(`/admin/api/permissions/${encodeURIComponent(button.dataset.tool)}`, {
+        const response = await fetch(`/admin/api/actions/${encodeURIComponent(button.dataset.action)}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ enabled })

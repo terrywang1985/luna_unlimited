@@ -2,7 +2,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
 const baseUrl = process.env.MCP_TEST_BASE_URL || "http://127.0.0.1:18765";
-const permissionUrl = `${baseUrl}/admin/api/permissions/write_text_file`;
+const permissionUrl = `${baseUrl}/admin/api/actions/workspace.write_text`;
 
 async function setWritePermission(enabled) {
   const response = await fetch(permissionUrl, {
@@ -22,11 +22,11 @@ async function setApprovalPolicy(enabled) {
   if (!response.ok) throw new Error(`Approval policy API returned HTTP ${response.status}`);
 }
 
-async function waitForApproval(tool, targetPath) {
+async function waitForApproval(action, targetPath) {
   for (let attempt = 0; attempt < 50; attempt += 1) {
     const response = await fetch(`${baseUrl}/admin/api/approvals`, { cache: "no-store" });
     const approvals = await response.json();
-    const match = approvals.pending.find((approval) => approval.tool === tool && approval.path === targetPath);
+    const match = approvals.pending.find((approval) => approval.action === action && approval.path === targetPath);
     if (match) return match;
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
@@ -45,15 +45,15 @@ try {
   await setWritePermission(false);
   await client.connect(transport);
   const result = await client.callTool({
-    name: "write_text_file",
-    arguments: { path: "permission-test.txt", content: "This write must be blocked." }
+    name: "workspace.write",
+    arguments: { request: { operation: "text", path: "permission-test.txt", content: "This write must be blocked." } }
   });
   if (!result.isError) throw new Error("Disabled write tool was not blocked");
 
   const logsResponse = await fetch(`${baseUrl}/admin/api/logs?limit=20`);
   const logs = await logsResponse.json();
   const denied = logs.events.some(
-    (event) => event.tool === "write_text_file" && event.path === "permission-test.txt" && event.status === "denied"
+    (event) => event.tool === "workspace.write_text" && event.path === "permission-test.txt" && event.status === "denied"
   );
   if (!denied) throw new Error("Denied tool call was not present in the audit log");
 
@@ -61,10 +61,10 @@ try {
   await setApprovalPolicy(true);
   const approvedPath = "approval-test.txt";
   const toolCall = client.callTool({
-    name: "write_text_file",
-    arguments: { path: approvedPath, content: "Approved through the dashboard API." }
+    name: "workspace.write",
+    arguments: { request: { operation: "text", path: approvedPath, content: "Approved through the dashboard API." } }
   });
-  const approval = await waitForApproval("write_text_file", approvedPath);
+  const approval = await waitForApproval("workspace.write_text", approvedPath);
   const decisionResponse = await fetch(`${baseUrl}/admin/api/approvals/${approval.id}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

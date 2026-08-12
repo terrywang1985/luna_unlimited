@@ -7,8 +7,8 @@ export class ApprovalManager {
     this.recent = [];
   }
 
-  request(tool, targetPath, summary) {
-    if (!this.policy.requiresApproval(tool)) {
+  request(action, targetPath, summary) {
+    if (!this.policy.requiresApproval(action)) {
       return Promise.resolve({ approved: true, reason: "approval_not_required" });
     }
 
@@ -22,9 +22,9 @@ export class ApprovalManager {
 
       this.pending.set(id, {
         id,
-        tool,
+        action,
         path: String(targetPath).slice(0, 500),
-        summary: String(summary || `${tool}: ${targetPath}`).slice(0, 1000),
+        summary: String(summary || `${action}: ${targetPath}`).slice(0, 1000),
         requestedAt: requestedAt.toISOString(),
         expiresAt: new Date(requestedAt.getTime() + this.policy.approvalTimeoutSeconds * 1000).toISOString(),
         timer,
@@ -41,7 +41,7 @@ export class ApprovalManager {
     this.pending.delete(id);
     this.recent.unshift({
       id: approval.id,
-      tool: approval.tool,
+      action: approval.action,
       path: approval.path,
       summary: approval.summary,
       requestedAt: approval.requestedAt,

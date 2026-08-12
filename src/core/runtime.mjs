@@ -90,30 +90,33 @@ export class LunaCore {
       maxCheckpoints
     });
 
-    this.toolHandlers = {
-      get_capabilities: (request) => this.getCapabilities(request),
-      list_directory: (request) => this.files.listDirectory(request),
-      stat_path: (request) => this.files.statPath(request),
-      read_text_file: (request) => this.files.readTextFile(request),
-      read_text_file_range: (request) => this.files.readTextFileRange(request),
-      search_files: (request) => this.search.searchFiles(request),
-      write_text_file: (request) => this.files.writeTextFile(request),
-      replace_text: (request) => this.files.replaceText(request),
-      write_files: (request) => this.files.writeFiles(request),
-      apply_patch: (request) => this.patch.apply(request),
-      create_directory: (request) => this.fileOperations.createDirectory(request),
-      move_path: (request) => this.fileOperations.movePath(request),
-      delete_path: (request) => this.fileOperations.deletePath(request),
-      inspect_artifact: (request) => this.artifacts.inspect(request),
-      import_artifact: (request) => this.artifacts.import(request),
-      export_artifact: (request) => this.artifacts.export(request),
-      create_checkpoint: (request) => this.checkpoints.create(request),
-      list_checkpoints: () => this.checkpoints.list(),
-      restore_checkpoint: (request) => this.checkpoints.restore(request),
-      delete_checkpoint: (request) => this.checkpoints.delete(request),
-      exec_command: (request) => this.commands.execute(request),
-      install_dependencies: (request) => this.commands.installDependencies(request),
-      clone_repository: (request) => this.repositories.clone(request)
+    this.actionHandlers = {
+      "system.capabilities": (request) => this.getCapabilities(request),
+      "workspace.list": (request) => this.files.listDirectory(request),
+      "workspace.stat": (request) => this.files.statPath(request),
+      "workspace.read_text": (request) => this.files.readTextFile(request),
+      "workspace.read_range": (request) => this.files.readTextFileRange(request),
+      "workspace.search": (request) => this.search.searchFiles(request),
+      "workspace.write_text": (request) => this.files.writeTextFile(request),
+      "workspace.replace_text": (request) => this.files.replaceText(request),
+      "workspace.write_many": (request) => this.files.writeFiles(request),
+      "workspace.mkdir": (request) => this.fileOperations.createDirectory(request),
+      "workspace.move": (request) => this.fileOperations.movePath(request),
+      "workspace.delete": (request) => this.fileOperations.deletePath(request),
+      "code.apply_patch": (request) => this.patch.apply(request),
+      "artifact.inspect": (request) => this.artifacts.inspect(request),
+      "artifact.import": (request) => this.artifacts.import(request),
+      "artifact.export": (request) => this.artifacts.export(request),
+      "checkpoint.create": (request) => this.checkpoints.create(request),
+      "checkpoint.list": () => this.checkpoints.list(),
+      "checkpoint.restore": (request) => this.checkpoints.restore(request),
+      "checkpoint.delete": (request) => this.checkpoints.delete(request),
+      "git.status": (request) => this.commands.execute({ ...request, program: "git", args: request.args }),
+      "git.diff": (request) => this.commands.execute({ ...request, program: "git", args: request.args }),
+      "git.log": (request) => this.commands.execute({ ...request, program: "git", args: request.args }),
+      "git.clone": (request) => this.repositories.clone(request),
+      "project.execute": (request) => this.commands.execute(request),
+      "project.install_dependencies": (request) => this.commands.installDependencies(request)
     };
   }
 
@@ -135,7 +138,7 @@ export class LunaCore {
     await this.audit.initialize();
   }
 
-  async execute(tool, request, inputContext = {}, approvalSummary = "") {
+  async execute(action, request, inputContext = {}, approvalSummary = "") {
     const started = performance.now();
     const context = createWorkSessionContext(inputContext);
     const targetPath = request.path
@@ -146,31 +149,31 @@ export class LunaCore {
       ?? request.label
       ?? (Array.isArray(request.expectedFiles) ? request.expectedFiles.map((file) => file.path).join(", ").slice(0, 500) : undefined)
       ?? (Array.isArray(request.files) ? request.files.map((file) => file.path).join(", ").slice(0, 500) : ".");
-    const handler = this.toolHandlers[tool];
+    const handler = this.actionHandlers[action];
     if (!handler) {
-      return this.failure(coreError(CoreErrorCode.INVALID_ARGUMENT, `Unknown tool: ${tool}`));
+      return this.failure(coreError(CoreErrorCode.INVALID_ARGUMENT, `Unknown action: ${action}`));
     }
 
-    if (!this.policy.isToolEnabled(tool)) {
-      const error = coreError(CoreErrorCode.TOOL_DISABLED, `${tool} is disabled by the local permission policy`);
+    if (!this.policy.isActionEnabled(action)) {
+      const error = coreError(CoreErrorCode.TOOL_DISABLED, `${action} is disabled by the local permission policy`);
       const audit = this.audit.record({
-        tool,
+        tool: action,
         path: targetPath,
         status: "denied",
         durationMs: Math.round(performance.now() - started),
-        details: { reason: "Tool disabled in local permissions" },
+        details: { reason: "Action disabled in local permissions" },
         context: auditContext(context)
       });
       return this.failure(error, audit);
     }
 
-    const approval = await this.approvals.request(tool, targetPath, approvalSummary);
+    const approval = await this.approvals.request(action, targetPath, approvalSummary);
     if (!approval.approved) {
-      const error = coreError(CoreErrorCode.APPROVAL_DENIED, `${tool} was denied by the local approval policy`, {
+      const error = coreError(CoreErrorCode.APPROVAL_DENIED, `${action} was denied by the local approval policy`, {
         reason: approval.reason
       });
       const audit = this.audit.record({
-        tool,
+        tool: action,
         path: targetPath,
         status: "denied",
         durationMs: Math.round(performance.now() - started),
@@ -183,7 +186,7 @@ export class LunaCore {
     try {
       const data = await handler(request, context);
       const audit = this.audit.record({
-        tool,
+        tool: action,
         path: targetPath,
         status: "success",
         durationMs: Math.round(performance.now() - started),
@@ -194,7 +197,7 @@ export class LunaCore {
     } catch (rawError) {
       const error = normalizeCoreError(rawError);
       const audit = this.audit.record({
-        tool,
+        tool: action,
         path: targetPath,
         status: "error",
         durationMs: Math.round(performance.now() - started),
@@ -241,10 +244,10 @@ export class LunaCore {
     }
   }
 
-  setToolPermission(tool, enabled) {
-    if (!this.policy.setToolEnabled(tool, enabled)) return null;
-    this.audit.record({ tool: "admin.permission", path: tool, status: "success", details: { enabled } });
-    return { name: tool, enabled: this.policy.isToolEnabled(tool) };
+  setActionPermission(action, enabled) {
+    if (!this.policy.setActionEnabled(action, enabled)) return null;
+    this.audit.record({ tool: "admin.permission", path: action, status: "success", details: { enabled } });
+    return { id: action, enabled: this.policy.isActionEnabled(action) };
   }
 
   setApprovalEnabled(enabled) {
@@ -263,7 +266,7 @@ export class LunaCore {
       tool: "admin.approval",
       path: approval.path,
       status: approved ? "success" : "denied",
-      details: { approvalId: approval.id, targetTool: approval.tool, decision }
+      details: { approvalId: approval.id, targetAction: approval.action, decision }
     });
     return { id: approval.id, decision };
   }
@@ -281,7 +284,7 @@ export class LunaCore {
         approvalMode: policy.approvalEnabled ? "approval-required" : "observe-only",
         approvalAvailable: true,
         approvalTimeoutSeconds: policy.approvalTimeoutSeconds,
-        protectedTools: policy.protectedTools,
+        protectedActions: policy.protectedActions,
         checkpointBackend: this.checkpoints.backend,
         maxCheckpoints: this.limits.maxCheckpoints,
         maxCheckpointFiles: this.limits.maxCheckpointFiles,
@@ -289,7 +292,7 @@ export class LunaCore {
         maxArtifactBytes: this.limits.maxArtifactBytes,
         maxOperationEntries: this.limits.maxOperationEntries
       },
-      permissions: this.policy.permissionRows(),
+      actions: this.policy.actionRows(),
       approval: {
         enabled: policy.approvalEnabled,
         pendingCount: this.approvals.size,

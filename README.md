@@ -45,17 +45,30 @@ flowchart LR
 - 在本机 Dashboard 查看权限、运行状态、审批队列和审计日志；
 - 拒绝绝对路径、`..`、符号链接逃逸、`.env`、私钥和常见凭据文件。
 
-当前版本提供 23 个 MCP 工具：
+当前版本只向 Host 暴露 13 个按领域和风险边界组织的 MCP 工具；实际权限、审批和审计继续落在 26 个细粒度 Core Action 上：
 
 | 分类 | 工具 |
 | --- | --- |
-| 能力发现 | `get_capabilities` |
-| 浏览与读取 | `list_directory`, `stat_path`, `read_text_file`, `read_text_file_range`, `search_files` |
-| 写入 | `write_text_file`, `replace_text`, `write_files`, `apply_patch` |
-| 文件重构 | `create_directory`, `move_path`, `delete_path` |
-| Artifact | `inspect_artifact`, `import_artifact`, `export_artifact` |
-| 恢复 | `create_checkpoint`, `list_checkpoints`, `restore_checkpoint`, `delete_checkpoint` |
-| 执行与项目获取 | `exec_command`, `install_dependencies`, `clone_repository` |
+| 能力发现 | `luna.capabilities` |
+| Workspace | `workspace.read`, `workspace.write`, `workspace.manage` |
+| 可靠补丁 | `code.patch` |
+| Artifact | `artifact.read`, `artifact.import` |
+| 恢复 | `checkpoint.read`, `checkpoint.write` |
+| Git | `git.read`, `git.remote` |
+| 工程执行 | `project.execute`, `project.dependencies` |
+
+拥有多个子操作的工具接收一个严格类型的 `request` 对象。例如：
+
+```json
+{
+  "request": {
+    "operation": "text",
+    "path": "src/index.js"
+  }
+}
+```
+
+`tools/list` 会把不同 operation 暴露为 `request.oneOf` 分支，因此模型仍能看到每个子操作的精确参数，而不是面对一个任意字符串路由器。
 
 ## 五分钟开始
 
@@ -81,8 +94,8 @@ New-Item -ItemType Directory -Force "C:\luna-workspaces\my-project"
 然后在 ChatGPT 中开启 Developer mode，创建 Tunnel 类型的插件，选择刚创建的 Tunnel。首次对话建议先说：
 
 ```text
-请使用 luna-unlimited。先调用 get_capabilities，然后在当前 workspace 中创建一个带测试的 Node.js 项目；
-已有文件必须先 stat/read；创建完整文件优先使用 write_files，修改代码优先使用带 revision 的 apply_patch；安装依赖后运行测试并修复到通过。
+请使用 luna-unlimited。先调用 luna.capabilities，然后在当前 workspace 中创建一个带测试的 Node.js 项目；
+已有文件先用 workspace.read 的 stat/text 操作检查；创建多个完整文件使用 workspace.write(many)，修改代码优先使用带 revision 的 code.patch；安装依赖后运行测试并修复到通过。
 ```
 
 完整的账号配置、截图、启动说明、调用流程、安全模型、项目示例和故障排查见：
@@ -159,6 +172,8 @@ v0.6.4 修复 Node 22 HTTPS 客户端请求 DNS `lookup` 的 `all:true` 模式�
 
 v0.6.5 增加独立的 `clone_repository`，用于把公开 `github.com` 仓库克隆到 workspace 内的新目录。它不扩大通用 `exec_command` 的 Git 白名单：只接受无凭据 HTTPS，拒绝其他 Host、端口、查询参数和重定向，关闭系统/全局 Git 配置、credential helper、交互认证、代理、Git LFS smudge 与子模块初始化，默认 `depth=1`。Clone 先进入随机私有临时目录，通过文件数、总大小、敏感路径、符号链接和 HEAD 校验后再原子提交；失败会清理临时目录。Private 仓库尚不支持，不能把 PAT 放入 URL。
 
+v0.7.0 进行了破坏性的 Compact Domain Tool 重构，不保留旧平铺 Tool。MCP 公开目录从 23 个动作型工具收敛为 13 个领域工具；`workspace.read/write/manage`、`git.read/remote`、`checkpoint.read/write` 等通过严格的 operation Schema 路由到 26 个 Core Action。权限开关、审批队列和 audit 使用 Action id，因此聚合不会让 `git.status` 与 `git.clone`、读取与删除共享风险。Git status/diff/log 使用 typed 参数，Git 不能再通过通用项目命令入口传入；`artifact.import.file` 继续保持正式 Host `fileParams` 顶层路径。
+
 ## 开发与验证
 
 ```powershell
@@ -170,7 +185,7 @@ npm run test:patch
 npm run test:artifact
 ```
 
-v0.6.5 已达到“可靠工程编辑闭环 + 公开仓库导入”里程碑。近期版本的可执行任务、优先级和验收标准见 [TODO.md](TODO.md)，长期架构原则见 [AGENT_CAPABILITIES_ROADMAP.md](AGENT_CAPABILITIES_ROADMAP.md)。
+v0.7.0 已达到“可靠工程编辑闭环 + 紧凑领域工具面”里程碑。近期版本的可执行任务、优先级和验收标准见 [TODO.md](TODO.md)，长期架构原则见 [AGENT_CAPABILITIES_ROADMAP.md](AGENT_CAPABILITIES_ROADMAP.md)。
 
 ## 许可证
 

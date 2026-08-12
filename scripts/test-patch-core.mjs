@@ -58,7 +58,7 @@ try {
 `;
   const expectedFiles = [expected("alpha.txt", alpha), expected("beta.txt", beta), expected("gamma.txt", null)];
 
-  const dryRun = await core.execute("apply_patch", { patch: multiFilePatch, expectedFiles, dryRun: true }, context);
+  const dryRun = await core.execute("code.apply_patch", { patch: multiFilePatch, expectedFiles, dryRun: true }, context);
   assert.equal(dryRun.ok, true, dryRun.error?.message);
   assert.deepEqual(
     { dryRun: dryRun.data.structured.dryRun, committed: dryRun.data.structured.committed, files: dryRun.data.structured.files.length },
@@ -68,7 +68,7 @@ try {
   assert.equal(await content("beta.txt"), beta);
   await assert.rejects(content("gamma.txt"), { code: "ENOENT" });
 
-  const applied = await core.execute("apply_patch", { patch: multiFilePatch, expectedFiles }, context);
+  const applied = await core.execute("code.apply_patch", { patch: multiFilePatch, expectedFiles }, context);
   assert.equal(applied.ok, true, applied.error?.message);
   assert.equal(applied.data.structured.committed, true);
   assert.deepEqual(applied.data.structured.totals, { files: 3, bytes: 27, addedLines: 3, removedLines: 2 });
@@ -84,7 +84,7 @@ try {
 -one
 +ONE
 `;
-  const stale = await core.execute("apply_patch", {
+  const stale = await core.execute("code.apply_patch", {
     patch: stalePatch,
     expectedFiles: [{ path: "alpha.txt", sha256: "0".repeat(64) }]
   }, context);
@@ -99,7 +99,7 @@ try {
 -not-one
 +ONE
 `;
-  const mismatch = await core.execute("apply_patch", {
+  const mismatch = await core.execute("code.apply_patch", {
     patch: mismatchPatch,
     expectedFiles: [expected("alpha.txt", stableAlpha)]
   }, context);
@@ -107,14 +107,14 @@ try {
   assert.equal(mismatch.error.code, "PATCH_CONTEXT_MISMATCH");
   assert.equal(await content("alpha.txt"), stableAlpha);
 
-  const traversal = await core.execute("apply_patch", {
+  const traversal = await core.execute("code.apply_patch", {
     patch: `--- /dev/null\n+++ b/../outside.txt\n@@ -0,0 +1 @@\n+blocked\n`,
     expectedFiles: [{ path: "../outside.txt", sha256: null }]
   }, context);
   assert.equal(traversal.ok, false);
   assert.equal(traversal.error.code, "PATH_OUTSIDE_WORKSPACE");
 
-  const sensitive = await core.execute("apply_patch", {
+  const sensitive = await core.execute("code.apply_patch", {
     patch: `--- /dev/null\n+++ b/.env\n@@ -0,0 +1 @@\n+SECRET=blocked\n`,
     expectedFiles: [{ path: ".env", sha256: null }]
   }, context);
@@ -139,7 +139,7 @@ try {
     if (writes === 2) throw new Error("injected patch commit failure");
     return originalWriter(file);
   };
-  const rolledBack = await core.execute("apply_patch", {
+  const rolledBack = await core.execute("code.apply_patch", {
     patch: rollbackPatch,
     expectedFiles: [expected("alpha.txt", stableAlpha), expected("gamma.txt", stableGamma)]
   }, context);
@@ -152,22 +152,22 @@ try {
 
   await writeFile(path.join(workspaceRoot, "crlf.txt"), "a\r\nb\r\n", "utf8");
   const crlfPatch = `--- a/crlf.txt\n+++ b/crlf.txt\n@@ -1,2 +1,2 @@\n a\n-b\n+B\n`;
-  const crlfResult = await core.execute("apply_patch", {
+  const crlfResult = await core.execute("code.apply_patch", {
     patch: crlfPatch,
     expectedFiles: [expected("crlf.txt", "a\r\nb\r\n")]
   }, context);
   assert.equal(crlfResult.ok, true, crlfResult.error?.message);
   assert.equal(await content("crlf.txt"), "a\r\nB\r\n");
 
-  const noNewlinePatch = await core.execute("apply_patch", {
+  const noNewlinePatch = await core.execute("code.apply_patch", {
     patch: `--- a/alpha.txt\n+++ b/alpha.txt\n@@ -1 +1 @@\n-one\n\\ No newline at end of file\n+ONE\n`,
     expectedFiles: [expected("alpha.txt", stableAlpha)]
   }, context);
   assert.equal(noNewlinePatch.ok, false);
   assert.equal(noNewlinePatch.error.code, "PATCH_UNSUPPORTED");
 
-  assert.equal(core.policy.protectedTools.has("apply_patch"), true);
-  const patchAudits = core.audit.list(100).filter((event) => event.tool === "apply_patch");
+  assert.equal(core.policy.protectedActions.has("code.apply_patch"), true);
+  const patchAudits = core.audit.list(100).filter((event) => event.tool === "code.apply_patch");
   assert(patchAudits.some((event) => event.status === "success" && event.details.phase === "committed"));
   assert(patchAudits.some((event) => event.status === "success" && event.details.phase === "dry_run"));
   assert(patchAudits.some((event) => event.status === "error" && event.details.phase === "validation"));

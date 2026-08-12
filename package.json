@@ -1,6 +1,6 @@
 {
   "name": "luna-local-files-mcp",
-  "version": "0.6.5",
+  "version": "0.7.0",
   "private": true,
   "type": "module",
   "license": "Apache-2.0",

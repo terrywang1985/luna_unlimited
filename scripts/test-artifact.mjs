@@ -5,7 +5,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
 const baseUrl = process.env.MCP_TEST_BASE_URL || "http://127.0.0.1:18765";
-const client = new Client({ name: "luna-artifact-mcp-test", version: "0.6.5" });
+const client = new Client({ name: "luna-artifact-mcp-test", version: "0.7.0" });
 const transport = new StreamableHTTPClientTransport(new URL(`${baseUrl}/mcp`));
 const project = `artifact-mcp-test-${process.pid}`;
 const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
@@ -15,7 +15,18 @@ function toolText(result) {
 }
 
 async function call(name, args = {}) {
-  const result = await client.callTool({ name, arguments: args });
+  const mapped = {
+    get_capabilities: ["luna.capabilities", {}],
+    create_directory: ["workspace.write", { request: { operation: "mkdir", ...args } }],
+    write_text_file: ["workspace.write", { request: { operation: "text", ...args } }],
+    stat_path: ["workspace.read", { request: { operation: "stat", ...args } }],
+    move_path: ["workspace.manage", { request: { operation: "move", ...args } }],
+    delete_path: ["workspace.manage", { request: { operation: "delete", ...args } }],
+    inspect_artifact: ["artifact.read", { request: { operation: "inspect", ...args } }],
+    export_artifact: ["artifact.read", { request: { operation: "export", ...args } }],
+    import_artifact: ["artifact.import", args]
+  }[name] || [name, args];
+  const result = await client.callTool({ name: mapped[0], arguments: mapped[1] });
   const text = toolText(result);
   let payload = result.structuredContent || null;
   if (!result.isError && payload === null) {
@@ -25,7 +36,7 @@ async function call(name, args = {}) {
 }
 
 async function setPermission(tool, enabled) {
-  const response = await fetch(`${baseUrl}/admin/api/permissions/${tool}`, {
+  const response = await fetch(`${baseUrl}/admin/api/actions/${tool}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ enabled })
@@ -46,7 +57,7 @@ async function waitForApproval(tool, targetPath) {
   for (let attempt = 0; attempt < 60; attempt += 1) {
     const response = await fetch(`${baseUrl}/admin/api/approvals`, { cache: "no-store" });
     const approvals = await response.json();
-    const match = approvals.pending.find((approval) => approval.tool === tool && approval.path === targetPath);
+    const match = approvals.pending.find((approval) => approval.action === tool && approval.path === targetPath);
     if (match) return match;
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
@@ -69,7 +80,7 @@ const workspaceRoot = path.resolve(initialStatus.policy.workspaceRoot);
 const projectRoot = path.join(workspaceRoot, project);
 if (!projectRoot.startsWith(`${workspaceRoot}${path.sep}`)) throw new Error("Unsafe artifact test path");
 const initialApproval = initialStatus.approval.enabled;
-const initialPermissions = Object.fromEntries(initialStatus.permissions.map((tool) => [tool.name, tool.enabled]));
+const initialPermissions = Object.fromEntries(initialStatus.actions.map((action) => [action.id, action.enabled]));
 let connected = false;
 
 try {
@@ -79,10 +90,10 @@ try {
 
   const listed = await client.listTools();
   const tools = new Map(listed.tools.map((tool) => [tool.name, tool]));
-  for (const name of ["create_directory", "move_path", "delete_path", "inspect_artifact", "import_artifact", "export_artifact"]) {
-    if (!tools.has(name)) throw new Error(`Missing v0.6 tool: ${name}`);
+  for (const name of ["workspace.write", "workspace.manage", "artifact.read", "artifact.import"]) {
+    if (!tools.has(name)) throw new Error(`Missing v0.7 domain tool: ${name}`);
   }
-  const importTool = tools.get("import_artifact");
+  const importTool = tools.get("artifact.import");
   if (JSON.stringify(importTool._meta?.["openai/fileParams"]) !== JSON.stringify(["file"])) {
     throw new Error("import_artifact must declare exactly one Host file rewrite path: file");
   }
@@ -100,7 +111,7 @@ try {
   }
 
   const capabilities = (await call("get_capabilities")).payload;
-  if (capabilities.server.version !== "0.6.5" || !capabilities.features.artifactTransfer
+  if (capabilities.server.version !== "0.7.0" || !capabilities.features.artifactTransfer
     || !capabilities.features.fileOperations || !capabilities.features.artifactHostFileInput) {
     throw new Error("v0.6 capabilities are not advertised");
   }
@@ -137,7 +148,7 @@ try {
   const blob = resource.contents?.[0]?.blob;
   if (!blob || !Buffer.from(blob, "base64").equals(png)) throw new Error("Exported MCP resource bytes did not match the workspace artifact");
 
-  await setPermission("import_artifact", false);
+  await setPermission("artifact.import", false);
   const deniedImport = await call("import_artifact", {
     file: {
       download_url: "https://127.0.0.1/not-allowed.png",
@@ -149,7 +160,7 @@ try {
     expected_sha256: null
   });
   if (!deniedImport.result.isError) throw new Error("Disabled import_artifact was not denied");
-  await setPermission("import_artifact", true);
+  await setPermission("artifact.import", true);
   const blockedImport = await call("import_artifact", {
     file: {
       download_url: "https://127.0.0.1/not-allowed.png",
@@ -171,20 +182,20 @@ try {
   await setApprovalPolicy(true);
 
   const approvedCall = call("delete_path", { path: approvePath, expected_sha256: approveStat.sha256 });
-  const approval = await waitForApproval("delete_path", approvePath);
+  const approval = await waitForApproval("workspace.delete", approvePath);
   await decideApproval(approval.id, "approve");
   const approved = await approvedCall;
   if (approved.result.isError) throw new Error("Approved delete_path did not execute");
 
   const deniedCall = call("delete_path", { path: denyPath, expected_sha256: denyStat.sha256 });
-  const denial = await waitForApproval("delete_path", denyPath);
+  const denial = await waitForApproval("workspace.delete", denyPath);
   await decideApproval(denial.id, "deny");
   const denied = await deniedCall;
   if (!denied.result.isError || !(await readFile(path.join(projectRoot, "denial-delete.txt"), "utf8"))) {
     throw new Error("Denied delete_path changed the workspace");
   }
 
-  console.log("PASS: MCP exposes six v0.6.5 file-operation and artifact tools");
+  console.log("PASS: MCP exposes compact v0.7 workspace and artifact domain tools");
   console.log("PASS: import_artifact publishes one exact Host mount rewrite path with the complete file schema");
   console.log("PASS: create/move/delete round trip enforces file revisions");
   console.log("PASS: binary inspection and MCP resource-link export preserve exact image bytes");
@@ -201,7 +212,7 @@ try {
     await client.close().catch(() => {});
   }
   for (const [tool, enabled] of Object.entries(initialPermissions)) {
-    if (tool === "import_artifact") await setPermission(tool, enabled).catch(() => {});
+    if (tool === "artifact.import") await setPermission(tool, enabled).catch(() => {});
   }
   await setApprovalPolicy(initialApproval).catch(() => {});
   await rm(projectRoot, { recursive: true, force: true }).catch(() => {});

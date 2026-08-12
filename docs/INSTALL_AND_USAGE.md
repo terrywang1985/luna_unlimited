@@ -267,7 +267,7 @@ Dashboard: http://127.0.0.1:18765/admin
 
 ![创建 Tunnel 类型的 ChatGPT 插件](images/4_create_plugin/3_plugins_create.jpg)
 
-如果插件扫描后没有看到 23 个工具，先确认本机 MCP/Tunnel Ready，然后删除或刷新开发插件并新开一个对话。工具目录在已有会话里可能被缓存。
+如果插件扫描后没有看到 v0.7.0 的 13 个领域工具，先确认本机 MCP/Tunnel Ready，然后删除或刷新开发插件并新开一个对话。v0.7.0 删除了全部旧平铺工具，已有会话可能仍缓存旧目录。
 
 ## 11. 在网页中使用 Luna
 
@@ -285,13 +285,13 @@ Dashboard: http://127.0.0.1:18765/admin
 使用 luna-unlimited 在当前 workspace 创建一个中等规模的 Node.js 项目。
 
 要求：
-1. 先调用 get_capabilities，确认工具和限制；
-2. 先列目录；已有文件必须 stat/read 后再修改；
+1. 先调用 luna.capabilities，确认工具、子操作和限制；
+2. 先调用 workspace.read(list)；已有文件必须用 stat/text 操作检查后再修改；
 3. 给出目录结构和实现计划；
-4. 新建完整文件优先使用 write_files；修改已有代码优先使用带 SHA-256 预期的 apply_patch；
+4. 新建完整文件优先使用 workspace.write(many)；修改已有代码优先使用带 SHA-256 预期的 code.patch；
 5. 创建 package.json、源码、测试、README 和必要配置；
-6. 使用 install_dependencies 安装声明的 npm 依赖；
-7. 使用 exec_command 运行 lint/typecheck/test/build 中项目实际提供的命令；
+6. 使用 project.dependencies 安装声明的 npm 依赖；
+7. 使用 project.execute 运行 lint/typecheck/test/build 中项目实际提供的命令；
 8. 根据错误继续修改，直到测试通过；
 9. 最后汇报创建文件、测试结果、仍存在的风险，不读取任何敏感文件。
 ```
@@ -301,12 +301,15 @@ Dashboard: http://127.0.0.1:18765/admin
 如果从公开 GitHub 项目开始，可以先调用：
 
 ```text
-clone_repository(
-  url="https://github.com/owner/repository",
-  destination="repository",
-  ref="main",
-  depth=1
-)
+git.remote({
+  "request": {
+    "operation": "clone",
+    "url": "https://github.com/owner/repository",
+    "destination": "repository",
+    "ref": "main",
+    "depth": 1
+  }
+})
 ```
 
 目标必须是 workspace 内尚不存在的新目录。当前只支持公开 `github.com` HTTPS 仓库；不接受 SSH、`file://`、其他 Host、非 443 端口、重定向或 URL 内的账号/token。Private 仓库需要未来的 OAuth/Secret Broker，不能把 PAT 拼进 URL。
@@ -316,63 +319,63 @@ clone_repository(
 Luna 的推荐工作流不是“直接覆盖所有文件”，而是：
 
 ```text
-get_capabilities
+luna.capabilities
     ↓
-clone_repository（仅从公开 GitHub 项目开始时）
+git.remote(clone)（仅从公开 GitHub 项目开始时）
     ↓
-list/search/stat/read
+workspace.read(list/search/stat/text/range)
     ↓
 制定目录结构与文件批次
     ↓
-write_files(expected_sha256) / apply_patch(expected_files, dry_run)
+workspace.write(many) / code.patch(expected_files, dry_run)
     ↓
-install_dependencies
+project.dependencies
     ↓
-exec_command(test/build/lint/typecheck)
+project.execute(test/build/lint/typecheck)
     ↓
 读取错误 → 重新 stat/read → 修复 → 再测试
 ```
 
-### `read_text_file` 返回什么
+### `workspace.read(text)` 返回什么
 
-`read_text_file` 适合读取上限以内的完整 UTF-8 小文件。v0.3.2 起，正文会同时出现在 MCP 文本内容和结构化结果的 `text` 字段；结构化结果还包含 path、bytes、mtime 与 SHA-256。这样偏好任一种 MCP 返回形式的 Host 都能直接拿到正文。审计只保存元数据，不保存文件内容。
+`workspace.read` 的 `text` 操作适合读取上限以内的完整 UTF-8 小文件。正文会同时出现在 MCP 文本内容和结构化结果的 `text` 字段；结构化结果还包含 path、bytes、mtime 与 SHA-256。审计只保存元数据，不保存文件内容。
 
-大文件或只需要局部上下文时继续使用 `read_text_file_range`，单次最多读取 1000 行。
+大文件或只需要局部上下文时使用 `workspace.read(range)`，单次最多读取 1000 行。
 
 ### 大规模修改前先创建恢复点
 
 在重构或批量生成文件前调用：
 
 ```text
-create_checkpoint(label="before-auth-refactor")
+checkpoint.write({"request":{"operation":"create","label":"before-auth-refactor"}})
 ```
 
 恢复点使用非 Git `local-snapshot` 后端，因此空目录、未初始化 Git 的项目同样可用。若方向错误：
 
 ```text
-list_checkpoints()
-restore_checkpoint(checkpoint_id="cp_...")
+checkpoint.read()
+checkpoint.write({"request":{"operation":"restore","checkpoint_id":"cp_..."}})
 ```
 
-恢复会还原快照内文件并删除之后新增的普通文件；`.git`、`.env` 等敏感路径、`node_modules` 和 Luna 运行日志被明确排除并原样保留。恢复取得 workspace 独占写锁，失败时自动回到恢复操作开始前的状态。确认不再需要后可用 `delete_checkpoint` 删除私有快照。
+恢复会还原快照内文件并删除之后新增的普通文件；`.git`、`.env` 等敏感路径、`node_modules` 和 Luna 运行日志被明确排除并原样保留。恢复取得 workspace 独占写锁，失败时自动回到恢复操作开始前的状态。确认不再需要后使用 `checkpoint.write(delete)` 删除私有快照。
 
 快照内容依赖操作系统当前用户的私有目录权限，不额外加密；共享系统账号或高敏源码环境应自行加密磁盘，并及时删除不再需要的恢复点。
 
-### 为什么已有文件必须先 `stat_path`
+### 为什么已有文件必须先 `workspace.read(stat)`
 
-`stat_path` 返回 SHA-256 revision。`write_files` 更新已有文件时必须携带该值。如果用户或另一个 Agent 已经改过文件，写入会得到 `FILE_CHANGED`，Agent 必须重新读取，而不是覆盖新版本。
+`workspace.read(stat)` 返回 SHA-256 revision。`workspace.write(many)` 更新已有文件时必须携带该值。如果用户或另一个 Agent 已经改过文件，写入会得到 `FILE_CHANGED`，Agent 必须重新读取，而不是覆盖新版本。
 
-### 为什么使用 `write_files`
+### 为什么使用 `workspace.write(many)`
 
-创建工程通常涉及 `package.json`、源码、测试和配置。`write_files` 会先验证整批路径、敏感规则、文件大小和 revision，再进入 commit；任一步失败会回滚已经提交的文件，避免出现“写了一半的工程”。
+创建工程通常涉及 `package.json`、源码、测试和配置。`workspace.write(many)` 会先验证整批路径、敏感规则、文件大小和 revision，再进入 commit；任一步失败会回滚已经提交的文件，避免出现“写了一半的工程”。
 
-### 为什么修改代码优先使用 `apply_patch`
+### 为什么修改代码优先使用 `code.patch`
 
-`apply_patch` 接受统一的 unified diff，一次最多触及 50 个文件，并支持创建、修改和删除。每个路径都必须出现在 `expected_files`：已有文件填写刚由 `stat_path` 获得的 SHA-256，新文件填写 `null`。建议先使用 `dry_run=true`，确认 context、revision、路径和大小全部通过，再用相同 patch 正式提交。
+`code.patch` 接受统一的 unified diff，一次最多触及 50 个文件，并支持创建、修改和删除。每个路径都必须出现在 `expected_files`：已有文件填写刚由 `workspace.read(stat)` 获得的 SHA-256，新文件填写 `null`。建议先使用 `dry_run=true`，确认 context、revision、路径和大小全部通过，再用相同 patch 正式提交。
 
 ```text
-stat_path("src/app.mjs")
-apply_patch(
+workspace.read({"request":{"operation":"stat","path":"src/app.mjs"}})
+code.patch(
   patch="--- a/src/app.mjs ...",
   expected_files=[{"path":"src/app.mjs","sha256":"<stat 返回值>"}],
   dry_run=true
@@ -383,33 +386,33 @@ Core 在文件锁内先解析整份 diff，并在内存中生成全部目标内�
 
 ### 文件重构与删除
 
-`create_directory` 可以显式创建目录；`move_path` 支持文件和安全目录的原子移动；`delete_path` 删除文件或目录。移动和删除文件前必须先 `stat_path` 或 `inspect_artifact`，并传入 SHA-256。覆盖目标文件还需要 `expected_destination_sha256`。非空目录删除必须使用 `recursive=true`，建议先创建 checkpoint。
+`workspace.write(mkdir)` 可以显式创建目录；`workspace.manage(move)` 支持文件和安全目录的原子移动；`workspace.manage(delete)` 删除文件或目录。移动和删除文件前必须先 `workspace.read(stat)` 或 `artifact.read(inspect)`，并传入 SHA-256。覆盖目标文件还需要 `expected_destination_sha256`。非空目录删除必须使用 `recursive=true`，建议先创建 checkpoint。
 
-递归目录操作会拒绝 `.git`、`.env`、凭据文件、内部临时文件和任何符号链接，并有条目数量上限。workspace 根不能移动或删除。`delete_path` 和覆盖移动都属于高风险操作，会受本地权限、审批和审计控制。
+递归目录操作会拒绝 `.git`、`.env`、凭据文件、内部临时文件和任何符号链接，并有条目数量上限。workspace 根不能移动或删除。`workspace.manage(delete)` 和覆盖移动都属于高风险操作，会受本地权限、审批和审计控制。
 
 ### PDF、Excel 和图片 Artifact
 
-二进制文件不要传给 `read_text_file`，改用：
+二进制文件不要传给文本读取操作，改用：
 
 ```text
-inspect_artifact(path="assets/mockup.png")
-export_artifact(path="reports/result.pdf")
-import_artifact(file=<网页文件参数>, destination="assets/generated.png", expected_sha256=null)
+artifact.read({"request":{"operation":"inspect","path":"assets/mockup.png"}})
+artifact.read({"request":{"operation":"export","path":"reports/result.pdf"}})
+artifact.import(file=<网页文件参数>, destination="assets/generated.png", expected_sha256=null)
 ```
 
-`import_artifact` 当前允许 PDF、XLS/XLSX、PNG、JPEG、GIF、WebP。ChatGPT Adapter 按 [OpenAI File APIs 参考](https://developers.openai.com/plugins/reference#file-apis) 使用官方 `_meta["openai/fileParams"]` 接收 `file_id` 和临时 `download_url`，随后 Core 执行 HTTPS/公网地址、重定向、大小、扩展名、MIME 和文件签名检查，并用临时文件原子提交。不能把任意 URL 当下载器使用。
+`artifact.import` 当前允许 PDF、XLS/XLSX、PNG、JPEG、GIF、WebP。ChatGPT Adapter 按 [OpenAI File APIs 参考](https://developers.openai.com/plugins/reference#file-apis) 使用官方 `_meta["openai/fileParams"]` 接收 `file_id` 和临时 `download_url`，随后 Core 执行 HTTPS/公网地址、重定向、大小、扩展名、MIME 和文件签名检查，并用临时文件原子提交。不能把任意 URL 当下载器使用。
 
-ChatGPT 生成物和用户附件都必须作为实际 Host 文件传给 `import_artifact.file`，不要把界面上看到的 `file_id` 手工复制成普通字符串。v0.6.3 起只在 `file` 这个顶层字段声明 `openai/fileParams`；当调用关联着 proxied mount 时，Host 会沿该路径在请求抵达 MCP 前补齐 `download_url` 和 `file_id`。v0.6.4 同时修复 Node 22 HTTPS pinned DNS lookup 的 `all:true` 回调形态。随后 Core 执行相同的 HTTPS 公网来源、重定向、大小、扩展名、MIME、签名、revision、审批和原子提交检查。网页 `/mnt/data/...` 路径和裸 ID 永远不会被 Luna Core 当成本地路径或下载凭据。
+ChatGPT 生成物和用户附件都必须作为实际 Host 文件传给 `artifact.import.file`，不要把界面上看到的 `file_id` 手工复制成普通字符串。`file` 继续保持顶层字段并声明 `openai/fileParams`；Host 会在请求抵达 MCP 前沿该路径补齐 `download_url` 和 `file_id`。网页 `/mnt/data/...` 路径和裸 ID 永远不会被 Luna Core 当成本地路径或下载凭据。
 
-`export_artifact` 返回标准 MCP `resource_link`；链接只在短时间内有效并绑定当前 SHA-256，文件变化后旧链接立即失效。不同 Host 对资源链接的展示方式可能不同。v0.6.4 先完成安全传输、正式 Host 文件参数和元数据检查，Excel 单元格级读写、PDF 文本提取/渲染将在后续文档处理层实现。
+`artifact.read(export)` 返回标准 MCP `resource_link`；链接只在短时间内有效并绑定当前 SHA-256，文件变化后旧链接立即失效。不同 Host 对资源链接的展示方式可能不同。Excel 单元格级读写、PDF 文本提取/渲染将在后续文档处理层实现。
 
 ### 依赖安装为什么单独提供工具
 
-任意 shell 权限过大。`install_dependencies` 当前只接受 npm，强制公共 registry，并关闭 lifecycle scripts、audit 和 fund hook。网络下载第三方包仍有供应链风险，因此它是受保护工具。
+任意 shell 权限过大。`project.dependencies` 当前只接受 npm，强制公共 registry，并关闭 lifecycle scripts、audit 和 fund hook。网络下载第三方包仍有供应链风险，因此对应的 `project.install_dependencies` Action 受审批保护。
 
 ### 仓库 Clone 为什么单独提供工具
 
-`clone_repository` 不通过通用 `exec_command` 放开 `git clone`。Core 会验证公开 GitHub URL、DNS、公网 Host、目标目录和 ref，关闭凭据助手、交互认证、代理、重定向、LFS smudge 与子模块初始化，并限制深度、超时、文件数和字节数。仓库先写入不可由 Agent 直接寻址的随机临时目录，拒绝敏感路径和符号链接，校验成功后原子移动到目标；失败不会留下半个目标目录。它是 `network + write` 风险的受保护工具。
+`git.remote(clone)` 不通过 `project.execute` 放开任意 `git clone`。Core 会验证公开 GitHub URL、DNS、公网 Host、目标目录和 ref，关闭凭据助手、交互认证、代理、重定向、LFS smudge 与子模块初始化，并限制深度、超时、文件数和字节数。仓库先写入随机临时目录，校验成功后原子移动到目标；对应的 `git.clone` Action 是 `network + write` 风险。
 
 ## 13. Dashboard、权限、审批和日志
 
@@ -424,27 +427,11 @@ Dashboard 可以查看：
 - MCP 是否 Ready；
 - Tunnel 是否 Ready；
 - 当前授权 workspace；
-- 23 个工具的启用状态；
+- 13 个公开领域工具对应的 26 个 Action 启用状态；
 - 待审批操作；
 - 最近读写、执行、拒绝和错误日志。
 
-本地审批默认关闭，即 `observe-only`。开启后，以下操作会同时等待 Dashboard 决定：
-
-- `write_text_file`
-- `replace_text`
-- `write_files`
-- `apply_patch`
-- `create_directory`
-- `move_path`
-- `delete_path`
-- `import_artifact`
-- `export_artifact`
-- `create_checkpoint`
-- `restore_checkpoint`
-- `delete_checkpoint`
-- `exec_command`
-- `install_dependencies`
-- `clone_repository`
+本地审批默认关闭，即 `observe-only`。开启后，受保护的细粒度 Action（例如 `workspace.write_text`、`workspace.delete`、`code.apply_patch`、`checkpoint.restore`、`git.clone` 和 `project.install_dependencies`）会等待 Dashboard 决定。只读 Action 不会因为与写操作共享一个领域 Tool 而被提升权限。
 
 审批默认 120 秒超时拒绝。Dashboard 和审计不会保存待写入正文或 API Key。
 

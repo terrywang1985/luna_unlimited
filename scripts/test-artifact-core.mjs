@@ -46,15 +46,15 @@ try {
   }));
   assert.deepEqual(allLookup, [{ address: "93.184.216.34", family: 4 }]);
 
-  const created = await core.execute("create_directory", { path: "ops/nested" }, context);
-  const idempotent = await core.execute("create_directory", { path: "ops/nested" }, context);
+  const created = await core.execute("workspace.mkdir", { path: "ops/nested" }, context);
+  const idempotent = await core.execute("workspace.mkdir", { path: "ops/nested" }, context);
   assert.equal(created.ok, true);
   assert.equal(created.data.structured.created, true);
   assert.equal(idempotent.data.structured.created, false);
 
   await writeFile(path.join(workspaceRoot, "ops", "move-source.txt"), "move-source\n", "utf8");
   const sourceHash = sha256("move-source\n");
-  const moved = await core.execute("move_path", {
+  const moved = await core.execute("workspace.move", {
     source: "ops/move-source.txt",
     destination: "ops/moved.txt",
     expectedSha256: sourceHash
@@ -65,7 +65,7 @@ try {
 
   await writeFile(path.join(workspaceRoot, "ops", "overwrite-source.txt"), "new\n", "utf8");
   await writeFile(path.join(workspaceRoot, "ops", "overwrite-destination.txt"), "old\n", "utf8");
-  const overwritten = await core.execute("move_path", {
+  const overwritten = await core.execute("workspace.move", {
     source: "ops/overwrite-source.txt",
     destination: "ops/overwrite-destination.txt",
     overwrite: true,
@@ -84,7 +84,7 @@ try {
     if (renameCalls === 2) throw new Error("injected move failure");
     return originalRename(...args);
   };
-  const failedMove = await core.execute("move_path", {
+  const failedMove = await core.execute("workspace.move", {
     source: "ops/rollback-source.txt",
     destination: "ops/rollback-destination.txt",
     overwrite: true,
@@ -112,7 +112,7 @@ try {
   );
   await childMutationEntered;
   let directoryMoveFinished = false;
-  const directoryMove = core.execute("move_path", {
+  const directoryMove = core.execute("workspace.move", {
     source: "ops/concurrent-tree",
     destination: "ops/concurrent-tree-moved"
   }, context).then((result) => {
@@ -127,7 +127,7 @@ try {
   assert.equal(directoryMoveResult.ok, true, directoryMoveResult.error?.message);
   assert.equal(await exists("ops/concurrent-tree-moved/child.txt"), true);
 
-  const staleDelete = await core.execute("delete_path", {
+  const staleDelete = await core.execute("workspace.delete", {
     path: "ops/moved.txt",
     expectedSha256: "0".repeat(64)
   }, context);
@@ -135,7 +135,7 @@ try {
   assert.equal(staleDelete.error.code, "FILE_CHANGED");
   assert.equal(await exists("ops/moved.txt"), true);
 
-  const deleted = await core.execute("delete_path", {
+  const deleted = await core.execute("workspace.delete", {
     path: "ops/moved.txt",
     expectedSha256: sourceHash
   }, context);
@@ -144,24 +144,24 @@ try {
 
   await mkdir(path.join(workspaceRoot, "ops", "non-empty"), { recursive: true });
   await writeFile(path.join(workspaceRoot, "ops", "non-empty", "a.txt"), "a\n", "utf8");
-  const nonRecursive = await core.execute("delete_path", { path: "ops/non-empty", recursive: false }, context);
+  const nonRecursive = await core.execute("workspace.delete", { path: "ops/non-empty", recursive: false }, context);
   assert.equal(nonRecursive.ok, false);
   assert.equal(nonRecursive.error.code, "DIRECTORY_NOT_EMPTY");
-  const recursive = await core.execute("delete_path", { path: "ops/non-empty", recursive: true }, context);
+  const recursive = await core.execute("workspace.delete", { path: "ops/non-empty", recursive: true }, context);
   assert.equal(recursive.ok, true, recursive.error?.message);
 
   await mkdir(path.join(workspaceRoot, "ops", "sensitive-tree"), { recursive: true });
   await writeFile(path.join(workspaceRoot, "ops", "sensitive-tree", ".env"), "SECRET=nope\n", "utf8");
-  const sensitiveDelete = await core.execute("delete_path", { path: "ops/sensitive-tree", recursive: true }, context);
+  const sensitiveDelete = await core.execute("workspace.delete", { path: "ops/sensitive-tree", recursive: true }, context);
   assert.equal(sensitiveDelete.ok, false);
   assert.equal(sensitiveDelete.error.code, "SENSITIVE_PATH");
-  const rootDelete = await core.execute("delete_path", { path: ".", recursive: true }, context);
+  const rootDelete = await core.execute("workspace.delete", { path: ".", recursive: true }, context);
   assert.equal(rootDelete.ok, false);
 
   await writeFile(path.join(workspaceRoot, "ops", "delete-rollback.txt"), "keep\n", "utf8");
   const originalDeleteRename = core.fileOperations.renamePath.bind(core.fileOperations);
   core.fileOperations.renamePath = async () => { throw new Error("injected delete rename failure"); };
-  const failedDelete = await core.execute("delete_path", {
+  const failedDelete = await core.execute("workspace.delete", {
     path: "ops/delete-rollback.txt",
     expectedSha256: sha256("keep\n")
   }, context);
@@ -170,7 +170,7 @@ try {
   assert.equal(await readFile(path.join(workspaceRoot, "ops", "delete-rollback.txt"), "utf8"), "keep\n");
 
   await writeFile(path.join(workspaceRoot, "image.png"), png);
-  const inspected = await core.execute("inspect_artifact", { path: "image.png" }, context);
+  const inspected = await core.execute("artifact.inspect", { path: "image.png" }, context);
   assert.equal(inspected.ok, true, inspected.error?.message);
   assert.equal(inspected.data.structured.mimeType, "image/png");
   assert.deepEqual(inspected.data.structured.image, { width: 1, height: 1 });
@@ -185,7 +185,7 @@ try {
     return true;
   });
   core.artifacts.downloadSource = async () => ({ buffer: png, responseMimeType: "image/png" });
-  const imported = await core.execute("import_artifact", {
+  const imported = await core.execute("artifact.import", {
     source: { url: "https://files.example.test/generated.png", id: "opaque-file-1", mimeType: "image/png", fileName: "generated.png" },
     destination: "artifacts/generated.png",
     expectedSha256: null
@@ -196,7 +196,7 @@ try {
   assert.equal(JSON.stringify(imported).includes("opaque-file-1"), false);
   assert.equal(await readFile(path.join(workspaceRoot, "artifacts", "generated.png")).then(sha256), sha256(png));
 
-  const mismatch = await core.execute("import_artifact", {
+  const mismatch = await core.execute("artifact.import", {
     source: { url: "https://files.example.test/generated.png", id: "opaque-file-2", mimeType: "image/png" },
     destination: "artifacts/not-a-pdf.pdf",
     expectedSha256: null
@@ -206,7 +206,7 @@ try {
   assert.equal(await exists("artifacts/not-a-pdf.pdf"), false);
 
   core.artifacts.downloadSource = async () => { throw new Error("injected download failure"); };
-  const failedDownload = await core.execute("import_artifact", {
+  const failedDownload = await core.execute("artifact.import", {
     source: { url: "https://files.example.test/failure.png", id: "opaque-file-secret", mimeType: "image/png" },
     destination: "artifacts/download-failure.png",
     expectedSha256: null
@@ -222,7 +222,7 @@ try {
   assert.equal(JSON.stringify(failedDownload).includes("files.example.test"), false);
   assert.equal(JSON.stringify(failedDownload).includes("opaque-file-secret"), false);
 
-  const exportResult = await core.execute("export_artifact", { path: "artifacts/generated.png" }, context);
+  const exportResult = await core.execute("artifact.export", { path: "artifacts/generated.png" }, context);
   assert.equal(exportResult.ok, true, exportResult.error?.message);
   assert.match(exportResult.data.structured.resourceUri, /^luna-artifact:\/\/export\/[A-Za-z0-9_-]+$/);
   const token = new URL(exportResult.data.structured.resourceUri).pathname.slice(1);
@@ -235,16 +235,16 @@ try {
   assert.equal(staleResource.ok, false);
   assert.equal(staleResource.error.code, "FILE_CHANGED");
 
-  const protectedTools = core.policy.protectedTools;
-  for (const tool of ["create_directory", "move_path", "delete_path", "import_artifact", "export_artifact"]) {
-    assert.equal(protectedTools.has(tool), true, `${tool} must be approval protected`);
+  const protectedActions = core.policy.protectedActions;
+  for (const tool of ["workspace.mkdir", "workspace.move", "workspace.delete", "artifact.import", "artifact.export"]) {
+    assert.equal(protectedActions.has(tool), true, `${tool} must be approval protected`);
   }
-  assert.equal(protectedTools.has("inspect_artifact"), false);
+  assert.equal(protectedActions.has("artifact.inspect"), false);
 
   const audit = core.audit.list(200);
-  assert(audit.some((event) => event.tool === "move_path" && event.status === "success"));
-  assert(audit.some((event) => event.tool === "delete_path" && event.status === "error"));
-  assert(audit.some((event) => event.tool === "import_artifact" && event.status === "success"));
+  assert(audit.some((event) => event.tool === "workspace.move" && event.status === "success"));
+  assert(audit.some((event) => event.tool === "workspace.delete" && event.status === "error"));
+  assert(audit.some((event) => event.tool === "artifact.import" && event.status === "success"));
   assert(audit.some((event) => event.tool === "export_artifact.resource" && event.status === "success"));
   assert.equal(JSON.stringify(audit).includes("files.example.test"), false, "audit must not retain signed download URLs");
 

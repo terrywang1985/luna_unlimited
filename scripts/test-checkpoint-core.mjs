@@ -19,7 +19,7 @@ async function exists(targetPath) {
 }
 
 async function write(core, filePath, content) {
-  const result = await core.execute("write_text_file", { path: filePath, content }, context);
+  const result = await core.execute("workspace.write_text", { path: filePath, content }, context);
   if (!result.ok) throw new Error(`Failed to write ${filePath}: ${result.error.message}`);
 }
 
@@ -41,7 +41,7 @@ try {
   await mkdir(path.join(workspaceRoot, "node_modules", "fixture"), { recursive: true });
   await writeFile(path.join(workspaceRoot, "node_modules", "fixture", "cache.bin"), "dependency-before", "utf8");
 
-  const created = await core.execute("create_checkpoint", { label: "before refactor" }, context);
+  const created = await core.execute("checkpoint.create", { label: "before refactor" }, context);
   if (!created.ok || created.data.structured.backend !== "local-snapshot") {
     throw new Error("create_checkpoint did not create a local snapshot");
   }
@@ -52,7 +52,7 @@ try {
     throw new Error("Checkpoint did not report sensitive/dependency/runtime exclusions");
   }
 
-  const listed = await core.execute("list_checkpoints", {}, context);
+  const listed = await core.execute("checkpoint.list", {}, context);
   if (!listed.ok || !listed.data.structured.checkpoints.some((entry) => entry.id === checkpoint.id)) {
     throw new Error("list_checkpoints did not return the created checkpoint");
   }
@@ -63,7 +63,7 @@ try {
   await writeFile(path.join(workspaceRoot, ".env"), "SECRET=after\n", "utf8");
   await writeFile(path.join(workspaceRoot, "node_modules", "fixture", "cache.bin"), "dependency-after", "utf8");
 
-  const restored = await core.execute("restore_checkpoint", { checkpointId: checkpoint.id }, context);
+  const restored = await core.execute("checkpoint.restore", { checkpointId: checkpoint.id }, context);
   if (!restored.ok || restored.data.structured.rolledBack !== false) {
     throw new Error(`restore_checkpoint failed: ${restored.error?.message || "unknown"}`);
   }
@@ -83,10 +83,10 @@ try {
     throw new Error("restore_checkpoint touched excluded dependencies");
   }
 
-  const deleted = await core.execute("delete_checkpoint", { checkpointId: checkpoint.id }, context);
+  const deleted = await core.execute("checkpoint.delete", { checkpointId: checkpoint.id }, context);
   if (!deleted.ok || deleted.data.structured.deleted !== true) throw new Error("delete_checkpoint failed");
 
-  const rollbackCheckpoint = await core.execute("create_checkpoint", { label: "rollback probe" }, context);
+  const rollbackCheckpoint = await core.execute("checkpoint.create", { label: "rollback probe" }, context);
   const rollbackId = rollbackCheckpoint.data.structured.id;
   await write(core, "src/a.txt", "pre-restore-a\n");
   await write(core, "src/b.txt", "pre-restore-b\n");
@@ -100,7 +100,7 @@ try {
     }
     return applyState(target, current);
   };
-  const failedRestore = await core.execute("restore_checkpoint", { checkpointId: rollbackId }, context);
+  const failedRestore = await core.execute("checkpoint.restore", { checkpointId: rollbackId }, context);
   core.checkpoints.applyState = applyState;
   if (failedRestore.ok || failedRestore.error.details.rolledBack !== true) {
     throw new Error("Failed restore did not report a completed rollback");
@@ -112,26 +112,26 @@ try {
     throw new Error("Restore rollback did not recover the second pre-restore file");
   }
   const rollbackAudit = core.audit.list(20).find(
-    (event) => event.tool === "restore_checkpoint" && event.path === rollbackId && event.status === "error"
+    (event) => event.tool === "checkpoint.restore" && event.path === rollbackId && event.status === "error"
   );
   if (rollbackAudit?.details?.rolledBack !== true) throw new Error("Restore rollback was not visible in audit details");
-  await core.execute("delete_checkpoint", { checkpointId: rollbackId }, context);
+  await core.execute("checkpoint.delete", { checkpointId: rollbackId }, context);
 
-  const corruptCheckpoint = await core.execute("create_checkpoint", { label: "integrity probe" }, context);
+  const corruptCheckpoint = await core.execute("checkpoint.create", { label: "integrity probe" }, context);
   const corruptId = corruptCheckpoint.data.structured.id;
   await writeFile(path.join(core.checkpoints.root, corruptId, "files", "src", "a.txt"), "corrupted", "utf8");
   const beforeCorruptRestore = await readFile(path.join(workspaceRoot, "src", "a.txt"), "utf8");
-  const corruptRestore = await core.execute("restore_checkpoint", { checkpointId: corruptId }, context);
+  const corruptRestore = await core.execute("checkpoint.restore", { checkpointId: corruptId }, context);
   if (corruptRestore.ok || corruptRestore.error.code !== CoreErrorCode.CHECKPOINT_INVALID) {
     throw new Error("Corrupted checkpoint was not rejected before restore");
   }
   if (await readFile(path.join(workspaceRoot, "src", "a.txt"), "utf8") !== beforeCorruptRestore) {
     throw new Error("Corrupted checkpoint changed workspace content");
   }
-  await core.execute("delete_checkpoint", { checkpointId: corruptId }, context);
+  await core.execute("checkpoint.delete", { checkpointId: corruptId }, context);
 
   const missing = await core.execute(
-    "restore_checkpoint",
+    "checkpoint.restore",
     { checkpointId: "cp_20000101T000000Z_00000000" },
     context
   );
@@ -139,10 +139,10 @@ try {
     throw new Error("Missing checkpoint did not return CHECKPOINT_NOT_FOUND");
   }
 
-  if (!core.policy.protectedTools.has("restore_checkpoint") || !core.policy.protectedTools.has("delete_checkpoint")) {
+  if (!core.policy.protectedActions.has("checkpoint.restore") || !core.policy.protectedActions.has("checkpoint.delete")) {
     throw new Error("Destructive checkpoint operations are not approval protected");
   }
-  const finalList = await core.execute("list_checkpoints", {}, context);
+  const finalList = await core.execute("checkpoint.list", {}, context);
   if (!finalList.ok || finalList.data.structured.total !== 0) throw new Error("Checkpoint cleanup did not finish");
 
   let insideWorkspaceRejected = false;

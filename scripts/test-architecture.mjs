@@ -44,23 +44,23 @@ try {
     workSessionId: "work-1"
   };
 
-  const write = await core.execute("write_text_file", { path: "round-trip.txt", content: "core-ok" }, context);
+  const write = await core.execute("workspace.write_text", { path: "round-trip.txt", content: "core-ok" }, context);
   if (!write.ok || write.data.text !== "Wrote 7 bytes to round-trip.txt") {
     throw new Error("Direct Core write result contract failed");
   }
 
-  const read = await core.execute("read_text_file", { path: "round-trip.txt" }, context);
+  const read = await core.execute("workspace.read_text", { path: "round-trip.txt" }, context);
   if (!read.ok || read.data.text !== "core-ok" || read.data.structured?.text !== "core-ok") {
     throw new Error("Direct Core read result contract failed");
   }
 
-  const stat = await core.execute("stat_path", { path: "round-trip.txt" }, context);
+  const stat = await core.execute("workspace.stat", { path: "round-trip.txt" }, context);
   const expectedSha256 = stat.data.structured.sha256;
   if (!stat.ok || !/^[a-f0-9]{64}$/.test(expectedSha256)) {
     throw new Error("stat_path did not return a stable content hash");
   }
 
-  const batch = await core.execute("write_files", {
+  const batch = await core.execute("workspace.write_many", {
     files: [
       { path: "round-trip.txt", content: "core-updated", expectedSha256 },
       { path: "nested/new.txt", content: "new-file" }
@@ -70,7 +70,7 @@ try {
     throw new Error("Atomic write_files direct Core contract failed");
   }
 
-  const stale = await core.execute("write_files", {
+  const stale = await core.execute("workspace.write_many", {
     files: [{ path: "round-trip.txt", content: "stale-write", expectedSha256 }]
   }, context);
   if (stale.ok || stale.error.code !== CoreErrorCode.FILE_CHANGED) {
@@ -119,7 +119,7 @@ try {
     throw new Error(`Workspace exclusive mutation gate ordering failed: ${gateOrder.join(",")}`);
   }
 
-  const traversal = await core.execute("read_text_file", { path: "../outside.txt" }, context);
+  const traversal = await core.execute("workspace.read_text", { path: "../outside.txt" }, context);
   if (traversal.ok || traversal.error.code !== CoreErrorCode.PATH_OUTSIDE_WORKSPACE) {
     throw new Error("Core traversal error is not structured as PATH_OUTSIDE_WORKSPACE");
   }
@@ -127,7 +127,7 @@ try {
   execFileSync("git", ["init", "--quiet", temporaryRoot], { windowsHide: true });
   await writeFile(path.join(temporaryRoot, ".gitignore"), "workspace/\n", "utf8");
   const parentIgnoreSearch = await core.execute(
-    "search_files",
+    "workspace.search",
     { query: "round-trip", path: ".", searchType: "filename", maxResults: 20 },
     context
   );
@@ -135,7 +135,7 @@ try {
     throw new Error("File search inherited ignore rules from above the authorized workspace");
   }
   const parentGit = await core.execute(
-    "exec_command",
+    "git.status",
     { program: "git", args: ["status", "--short"], cwd: ".", timeoutSeconds: 15 },
     context
   );
@@ -152,7 +152,7 @@ try {
     }
   }, null, 2)}\n`, "utf8");
   const parentNpm = await core.execute(
-    "exec_command",
+    "project.execute",
     { program: "npm", args: ["test"], cwd: ".", timeoutSeconds: 15 },
     context
   );
@@ -165,7 +165,7 @@ try {
 
   await writeFile(path.join(temporaryRoot, "go.mod"), "module outside.example/parent\n\ngo 1.20\n", "utf8");
   const parentGo = await core.execute(
-    "exec_command",
+    "project.execute",
     { program: "go", args: ["test", "./..."], cwd: ".", timeoutSeconds: 15 },
     context
   );
@@ -175,7 +175,7 @@ try {
 
   execFileSync("git", ["init", "--quiet", workspaceRoot], { windowsHide: true });
   const workspaceGit = await core.execute(
-    "exec_command",
+    "git.status",
     { program: "git", args: ["status", "--short"], cwd: ".", timeoutSeconds: 15 },
     context
   );
@@ -189,7 +189,7 @@ try {
     scripts: { test: "node -e \"console.log('workspace npm ok')\"" }
   }, null, 2)}\n`, "utf8");
   const workspaceNpm = await core.execute(
-    "exec_command",
+    "project.execute",
     { program: "npm", args: ["test"], cwd: ".", timeoutSeconds: 15 },
     context
   );
@@ -223,13 +223,13 @@ try {
     if (Object.hasOwn(safeEnvironment, name)) throw new Error(`Unsafe command environment variable survived: ${name}`);
   }
 
-  core.setToolPermission("write_text_file", false);
-  const disabled = await core.execute("write_text_file", { path: "denied.txt", content: "denied" }, context);
+  core.setActionPermission("workspace.write_text", false);
+  const disabled = await core.execute("workspace.write_text", { path: "denied.txt", content: "denied" }, context);
   if (disabled.ok || disabled.error.code !== CoreErrorCode.TOOL_DISABLED) {
     throw new Error("Core permission error is not structured as TOOL_DISABLED");
   }
 
-  const readAudit = core.audit.list(20).find((event) => event.tool === "read_text_file" && event.status === "success");
+  const readAudit = core.audit.list(20).find((event) => event.tool === "workspace.read_text" && event.status === "success");
   if (readAudit?.details?.context?.clientId !== "architecture-test" || readAudit.details.context.workSessionId !== "work-1") {
     throw new Error("CallerContext / WorkSessionContext was not retained for audit");
   }

@@ -2,7 +2,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
 const endpoint = new URL(process.env.MCP_TEST_URL || "http://127.0.0.1:18765/mcp");
-const client = new Client({ name: "luna-reliable-project-test", version: "0.6.5" });
+const client = new Client({ name: "luna-reliable-project-test", version: "0.7.0" });
 const transport = new StreamableHTTPClientTransport(endpoint);
 
 function toolText(result) {
@@ -10,7 +10,14 @@ function toolText(result) {
 }
 
 async function call(name, args = {}) {
-  const result = await client.callTool({ name, arguments: args });
+  const mapped = {
+    get_capabilities: ["luna.capabilities", {}],
+    stat_path: ["workspace.read", { request: { operation: "stat", ...args } }],
+    write_files: ["workspace.write", { request: { operation: "many", ...args } }],
+    install_dependencies: ["project.dependencies", args],
+    exec_command: ["project.execute", args]
+  }[name] || [name, args];
+  const result = await client.callTool({ name: mapped[0], arguments: mapped[1] });
   return { result, text: toolText(result) };
 }
 
@@ -36,7 +43,7 @@ try {
 
   const tools = await client.listTools();
   const toolNames = new Set(tools.tools.map((tool) => tool.name));
-  for (const expected of ["get_capabilities", "stat_path", "write_files", "install_dependencies", "clone_repository"]) {
+  for (const expected of ["luna.capabilities", "workspace.read", "workspace.write", "project.dependencies", "git.remote"]) {
     if (!toolNames.has(expected)) throw new Error(`Missing reliable-project tool: ${expected}`);
   }
 
@@ -44,7 +51,7 @@ try {
   if (capabilitiesCall.result.isError) throw new Error("get_capabilities returned an MCP error");
   const capabilities = JSON.parse(capabilitiesCall.text);
   if (
-    capabilities.server?.version !== "0.6.5"
+    capabilities.server?.version !== "0.7.0"
     || capabilities.features?.batchWrite !== true
     || capabilities.features?.commandProjectBoundary !== true
     || capabilities.features?.publicRepositoryClone !== true

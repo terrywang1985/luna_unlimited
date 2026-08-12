@@ -2,7 +2,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
 const baseUrl = process.env.MCP_TEST_BASE_URL || "http://127.0.0.1:18765";
-const client = new Client({ name: "luna-patch-mcp-test", version: "0.6.5" });
+const client = new Client({ name: "luna-patch-mcp-test", version: "0.7.0" });
 const transport = new StreamableHTTPClientTransport(new URL(`${baseUrl}/mcp`));
 const project = `patch-mcp-test-${process.pid}`;
 
@@ -11,7 +11,14 @@ function toolText(result) {
 }
 
 async function call(name, args = {}) {
-  const result = await client.callTool({ name, arguments: args });
+  const mapped = {
+    get_capabilities: ["luna.capabilities", {}],
+    stat_path: ["workspace.read", { request: { operation: "stat", ...args } }],
+    read_text_file: ["workspace.read", { request: { operation: "text", ...args } }],
+    write_files: ["workspace.write", { request: { operation: "many", ...args } }],
+    apply_patch: ["code.patch", args]
+  }[name] || [name, args];
+  const result = await client.callTool({ name: mapped[0], arguments: mapped[1] });
   const text = toolText(result);
   let payload = result.structuredContent || null;
   if (!result.isError && payload === null) {
@@ -32,7 +39,7 @@ async function setApprovalPolicy(enabled) {
 }
 
 async function setPermission(enabled) {
-  const response = await fetch(`${baseUrl}/admin/api/permissions/apply_patch`, {
+  const response = await fetch(`${baseUrl}/admin/api/actions/code.apply_patch`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ enabled })
@@ -44,7 +51,7 @@ async function waitForApproval(tool) {
   for (let attempt = 0; attempt < 60; attempt += 1) {
     const response = await fetch(`${baseUrl}/admin/api/approvals`, { cache: "no-store" });
     const approvals = await response.json();
-    const match = approvals.pending.find((approval) => approval.tool === tool);
+    const match = approvals.pending.find((approval) => approval.action === tool);
     if (match) return match;
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
@@ -70,7 +77,7 @@ const statusResponse = await fetch(`${baseUrl}/admin/api/status`, { cache: "no-s
 if (!statusResponse.ok) throw new Error(`Status API returned HTTP ${statusResponse.status}`);
 const initialStatus = await statusResponse.json();
 const initialApproval = initialStatus.approval.enabled;
-const initialPermission = initialStatus.permissions.find((tool) => tool.name === "apply_patch")?.enabled === true;
+const initialPermission = initialStatus.actions.find((action) => action.id === "code.apply_patch")?.enabled === true;
 let connected = false;
 
 try {
@@ -79,13 +86,13 @@ try {
   connected = true;
 
   const tools = new Set((await client.listTools()).tools.map((tool) => tool.name));
-  if (!tools.has("apply_patch")) throw new Error("MCP does not expose apply_patch");
+  if (!tools.has("code.patch")) throw new Error("MCP does not expose code.patch");
 
   const capabilities = (await call("get_capabilities")).payload;
-  if (capabilities.server.version !== "0.6.5" || capabilities.features.patch !== true) {
+  if (capabilities.server.version !== "0.7.0" || capabilities.features.patch !== true) {
     throw new Error("Patch capability/version is not advertised");
   }
-  if (!capabilities.tools.apply_patch?.approvalProtected) throw new Error("apply_patch is not approval protected");
+  if (!capabilities.actions["code.apply_patch"]?.approvalProtected) throw new Error("code.apply_patch is not approval protected");
 
   await setPermission(false);
   const permissionDenied = await call("apply_patch", {
@@ -155,7 +162,7 @@ try {
     patch: approvalPatch,
     expected_files: [{ path: alphaPath, sha256: approvedStat.sha256 }]
   });
-  const approval = await waitForApproval("apply_patch");
+  const approval = await waitForApproval("code.apply_patch");
   await decideApproval(approval.id, "approve");
   const approved = await approvedCall;
   if (approved.result.isError || (await call("read_text_file", { path: alphaPath })).text !== "alpha\napproved\n") {
@@ -168,7 +175,7 @@ try {
     patch: denialPatch,
     expected_files: [{ path: alphaPath, sha256: deniedStat.sha256 }]
   });
-  const denial = await waitForApproval("apply_patch");
+  const denial = await waitForApproval("code.apply_patch");
   await decideApproval(denial.id, "deny");
   const denied = await deniedCall;
   if (!denied.result.isError || (await call("read_text_file", { path: alphaPath })).text !== "alpha\napproved\n") {
@@ -199,14 +206,14 @@ try {
 
   const logsResponse = await fetch(`${baseUrl}/admin/api/logs?limit=200`, { cache: "no-store" });
   const logs = await logsResponse.json();
-  if (!logs.events.some((event) => event.tool === "apply_patch" && event.status === "success" && event.details.phase === "committed")) {
+  if (!logs.events.some((event) => event.tool === "code.apply_patch" && event.status === "success" && event.details.phase === "committed")) {
     throw new Error("Committed patch audit event is missing");
   }
-  if (!logs.events.some((event) => event.tool === "apply_patch" && event.status === "denied")) {
+  if (!logs.events.some((event) => event.tool === "code.apply_patch" && event.status === "denied")) {
     throw new Error("Denied patch audit event is missing");
   }
 
-  console.log("PASS: MCP advertises v0.6.5 atomic apply_patch capability");
+  console.log("PASS: MCP advertises v0.7.0 atomic code.patch capability");
   console.log("PASS: MCP dry-run and create/update/delete round trip succeeded");
   console.log("PASS: Dashboard approval can approve or deny apply_patch without bypassing Core policy");
   console.log("PASS: local permission disables apply_patch and committed/denied calls remain auditable");

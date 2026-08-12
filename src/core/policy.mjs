@@ -1,68 +1,30 @@
-export const TOOL_DEFINITIONS = Object.freeze([
-  { name: "get_capabilities", label: "能力发现", level: "read" },
-  { name: "list_directory", label: "浏览目录", level: "read" },
-  { name: "stat_path", label: "检查路径版本", level: "read" },
-  { name: "read_text_file", label: "读取文件", level: "read" },
-  { name: "read_text_file_range", label: "分段读取", level: "read" },
-  { name: "search_files", label: "搜索文件", level: "read" },
-  { name: "write_text_file", label: "整文件写入", level: "write" },
-  { name: "replace_text", label: "局部替换", level: "write" },
-  { name: "write_files", label: "安全批量写入", level: "write" },
-  { name: "apply_patch", label: "原子应用补丁", level: "write" },
-  { name: "create_directory", label: "创建目录", level: "write" },
-  { name: "move_path", label: "移动路径", level: "write" },
-  { name: "delete_path", label: "删除路径", level: "delete" },
-  { name: "inspect_artifact", label: "检查二进制文件", level: "read" },
-  { name: "import_artifact", label: "导入网页文件", level: "network" },
-  { name: "export_artifact", label: "导出本地文件", level: "read" },
-  { name: "create_checkpoint", label: "创建恢复点", level: "write" },
-  { name: "list_checkpoints", label: "查看恢复点", level: "read" },
-  { name: "restore_checkpoint", label: "恢复工作区", level: "write" },
-  { name: "delete_checkpoint", label: "删除恢复点", level: "write" },
-  { name: "exec_command", label: "执行命令", level: "execute" },
-  { name: "install_dependencies", label: "安装项目依赖", level: "execute" },
-  { name: "clone_repository", label: "克隆公开仓库", level: "network" }
-]);
+import { ACTION_DEFINITIONS } from "./actions.mjs";
 
-export const PROTECTED_TOOLS = Object.freeze([
-  "write_text_file",
-  "replace_text",
-  "write_files",
-  "apply_patch",
-  "create_directory",
-  "move_path",
-  "delete_path",
-  "import_artifact",
-  "export_artifact",
-  "create_checkpoint",
-  "restore_checkpoint",
-  "delete_checkpoint",
-  "exec_command",
-  "install_dependencies",
-  "clone_repository"
-]);
+export const PROTECTED_ACTIONS = Object.freeze(
+  ACTION_DEFINITIONS.filter((definition) => definition.protected).map((definition) => definition.id)
+);
 
 export class PolicyService {
   constructor({ approvalTimeoutSeconds = 120 } = {}) {
-    this.toolPermissions = Object.fromEntries(TOOL_DEFINITIONS.map(({ name }) => [name, true]));
+    this.actionPermissions = Object.fromEntries(ACTION_DEFINITIONS.map(({ id }) => [id, true]));
     this.approvalEnabled = false;
     this.approvalTimeoutSeconds = approvalTimeoutSeconds;
-    this.protectedTools = new Set(PROTECTED_TOOLS);
+    this.protectedActions = new Set(PROTECTED_ACTIONS);
     this.version = 1;
     this.revision = 0;
   }
 
-  hasTool(tool) {
-    return Object.hasOwn(this.toolPermissions, tool);
+  hasAction(action) {
+    return Object.hasOwn(this.actionPermissions, action);
   }
 
-  isToolEnabled(tool) {
-    return this.toolPermissions[tool] === true;
+  isActionEnabled(action) {
+    return this.actionPermissions[action] === true;
   }
 
-  setToolEnabled(tool, enabled) {
-    if (!this.hasTool(tool)) return false;
-    this.toolPermissions[tool] = enabled;
+  setActionEnabled(action, enabled) {
+    if (!this.hasAction(action)) return false;
+    this.actionPermissions[action] = enabled;
     this.revision += 1;
     return true;
   }
@@ -72,14 +34,14 @@ export class PolicyService {
     this.revision += 1;
   }
 
-  requiresApproval(tool) {
-    return this.approvalEnabled && this.protectedTools.has(tool);
+  requiresApproval(action) {
+    return this.approvalEnabled && this.protectedActions.has(action);
   }
 
-  permissionRows() {
-    return TOOL_DEFINITIONS.map((definition) => ({
+  actionRows() {
+    return ACTION_DEFINITIONS.map((definition) => ({
       ...definition,
-      enabled: this.isToolEnabled(definition.name)
+      enabled: this.isActionEnabled(definition.id)
     }));
   }
 
@@ -89,8 +51,8 @@ export class PolicyService {
       revision: this.revision,
       approvalEnabled: this.approvalEnabled,
       approvalTimeoutSeconds: this.approvalTimeoutSeconds,
-      protectedTools: [...this.protectedTools],
-      permissions: { ...this.toolPermissions }
+      protectedActions: [...this.protectedActions],
+      actions: { ...this.actionPermissions }
     };
   }
 }

@@ -36,62 +36,42 @@ agent_comms/desktop_to_web.md
 
 回复必须携带新的 `message_id` 并用 `reply_to` 指向收到的消息。通信文件只是协作层，不改变 Luna Core 的权限与安全策略。
 
-## 当前开发顺序
+## 当前外部 Contract
 
-严格按以下顺序推进：
+Stage 0、Milestone A/B 和 v0.6.5 前的可靠编辑闭环已经完成。v0.7.0 经项目所有者明确授权进行了破坏性 Tool Surface 重构：旧的 23 个平铺 MCP Tool 已全部删除，不建立 legacy Adapter，也不得重新暴露。
 
-### Stage 0 · Contract Freeze
-
-在重构前先锁定现有 7 个 MCP Tool 的外部行为：
+当前 MCP 必须只暴露以下 13 个领域工具：
 
 ```text
-list_directory
-read_text_file
-read_text_file_range
-search_files
-write_text_file
-replace_text
-exec_command
+luna.capabilities
+workspace.read
+workspace.write
+workspace.manage
+code.patch
+artifact.read
+artifact.import
+checkpoint.read
+checkpoint.write
+git.read
+git.remote
+project.execute
+project.dependencies
 ```
 
-行为锁定至少覆盖：
+拥有多个操作的领域工具使用顶层 `request` 对象，内部以严格的 `operation` discriminated union 表达子操作。Core 使用 `src/core/actions.mjs` 中的细粒度 Action Registry；permission、approval 和 audit 必须针对 Action，不得因为 MCP Tool 聚合而合并风险。
 
-1. tool 名称与参数字段；
-2. 成功返回结构和关键文本/JSON 字段；
-3. 典型错误与 `isError` 行为；
+`scripts/test-contract.mjs` 至少锁定：
+
+1. 13 个公开 Tool 的精确名称，且旧平铺 Tool 不再出现；
+2. `request.oneOf` 中的 operation 名称和参数结构；
+3. 成功返回结构和关键文本/JSON 字段；
 4. workspace / sensitive path 安全边界；
-5. permission disabled 行为；
-6. approval pause / approve / deny 行为；
-7. audit event 的关键字段与状态；
-8. command allowlist 和结构化输出。
+5. Action permission disabled 行为；
+6. Action approval pause / approve / deny 行为；
+7. audit event 使用真实 Action id；
+8. Git 参数不允许从 `project.execute` 绕过 typed Git operation。
 
-**Stage 0 测试通过以前，不开始 Core/Adapter 大规模拆分。**
-
-### Stage 1 · Milestone A：Core / Adapter 解耦
-
-1. 把 workspace、文件、搜索、命令、权限、审批、审计逻辑从 `server.mjs` 抽到 `src/core/`；
-2. MCP 只作为 Adapter；
-3. Core 不 import `@modelcontextprotocol/sdk`；
-4. MCP callback 不直接访问 fs/process；
-5. 保持现有 7 个 Tool 外部行为兼容；
-6. 定义统一 Core error code；
-7. 定义 `CallerContext` / `WorkSessionContext`；
-8. 所有 Stage 0 行为锁定测试持续通过。
-
-### Stage 2 · Milestone B：可靠编辑原语
-
-按路线图实现：
-
-```text
-get_capabilities
-stat_path
-read hash/revision
-apply_patch
-write conflict protection
-create/move/delete
-```
-
-当前 v0.4.0 已完成非 Git checkpoint/restore，v0.5.0 已完成 atomic `apply_patch`，v0.6.0 已完成 create/move/protected delete 与 Artifact Bridge，v0.6.3 已将 Host Artifact 导入统一到正式 `fileParams` 路径，v0.6.4 修复 Node 22 HTTPS pinned DNS lookup 的 `all:true` 兼容问题，v0.6.5 已完成公开 GitHub 仓库的受限原子 Clone。不要重复实现这些能力；下一阶段可推进文档格式处理、policy persistence 或 process manager。
+当前 v0.7.0 已完成 Action Registry / Compact Domain Tool Surface。下一阶段按 TODO 推进 policy persistence、project task 或 process manager，不重复实现既有 checkpoint、patch、Artifact Bridge 和公开 GitHub Clone。
 
 ## 架构硬约束
 
@@ -187,17 +167,17 @@ workSessionId
 - schema/version 明确；
 - 无效配置 fail closed 或安全回退；
 - policy 每次变更递增 `policyRevision`；
-- `get_capabilities` 只返回安全摘要，不泄露敏感本机路径或秘密。
+- `luna.capabilities` 只返回安全摘要，不泄露敏感本机路径或秘密。
 
-## get_capabilities 要求
+## luna.capabilities 要求
 
 至少返回：
 
 - Luna server/version；
 - adapter/protocol；
 - feature/limit 摘要；
-- 每个工具当前是否 enabled；
-- 每个工具当前是否 requiresApproval；
+- 每个公开 Tool 的 operation 目录；
+- 每个 Core Action 当前是否 enabled / requiresApproval / approvalProtected；
 - policy version / revision；
 - workspace 的安全别名或 root name。
 
