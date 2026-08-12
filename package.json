@@ -15,6 +15,7 @@
     "test:patch": "node scripts/test-patch-core.mjs && node scripts/test-patch.mjs",
     "test:artifact": "node scripts/test-artifact-core.mjs && node scripts/test-artifact.mjs",
     "test:repository": "node scripts/test-repository-core.mjs",
+    "test:linux": "bash scripts/test-linux-startup.sh",
     "test:mcp": "node scripts/test-mcp.mjs",
     "test:admin": "node scripts/test-admin.mjs",
     "test:workspace": "node scripts/test-workspace.mjs"

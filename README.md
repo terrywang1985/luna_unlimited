@@ -72,7 +72,9 @@ flowchart LR
 
 ## 五分钟开始
 
-运行环境：Windows 10/11、PowerShell、Node.js 20 或更高版本，以及能够使用 OpenAI Secure MCP Tunnel 与 ChatGPT Developer mode 的账号/工作区。
+运行环境：Windows 10/11 或主流 x64/arm64 Linux、Node.js 20 或更高版本，以及能够使用 OpenAI Secure MCP Tunnel 与 ChatGPT Developer mode 的账号/工作区。
+
+Windows：
 
 ```powershell
 git clone https://github.com/terrywang1985/luna_unlimited.git
@@ -91,6 +93,26 @@ New-Item -ItemType Directory -Force "C:\luna-workspaces\my-project"
 .\start-all.ps1 -Workspace "C:\luna-workspaces\my-project"
 ```
 
+Linux（Ubuntu/Debian 示例）：
+
+```bash
+sudo apt-get update
+sudo apt-get install -y nodejs npm curl unzip
+
+git clone https://github.com/terrywang1985/luna_unlimited.git
+cd luna_unlimited
+
+# 安装依赖、下载 Linux tunnel-client、校验 SHA-256，并创建 .env
+bash ./install.sh
+nano .env
+chmod 600 .env
+
+mkdir -p "$HOME/luna-workspaces/my-project"
+bash ./start-all.sh --workspace "$HOME/luna-workspaces/my-project"
+```
+
+Linux 不需要开放 `18765` 入站端口。Luna 仍只监听 `127.0.0.1`，`tunnel-client` 主动通过出站 HTTPS 连接 OpenAI。
+
 然后在 ChatGPT 中开启 Developer mode，创建 Tunnel 类型的插件，选择刚创建的 Tunnel。首次对话建议先说：
 
 ```text
@@ -104,6 +126,8 @@ New-Item -ItemType Directory -Force "C:\luna-workspaces\my-project"
 
 ## 启停与状态
 
+Windows：
+
 ```powershell
 # 重复运行是安全的：旧的 Luna 进程会被识别并停止，再启动一组新进程
 .\start-all.ps1 -Workspace "C:\luna-workspaces\my-project"
@@ -113,6 +137,19 @@ New-Item -ItemType Directory -Force "C:\luna-workspaces\my-project"
 
 # 停止 MCP 和 Tunnel
 .\stop-all.ps1
+```
+
+Linux：
+
+```bash
+# 默认无浏览器，适合无桌面的服务器；重复运行会安全重启同一实例
+bash ./start-all.sh --workspace "$HOME/luna-workspaces/my-project"
+
+# 桌面 Linux 可选择启动后打开 Dashboard
+bash ./start-all.sh --workspace "$HOME/luna-workspaces/my-project" --open-browser
+
+bash ./doctor.sh
+bash ./stop-all.sh
 ```
 
 默认地址：
@@ -131,12 +168,12 @@ New-Item -ItemType Directory -Force "C:\luna-workspaces\my-project"
 
 ## 安装脚本的安全行为
 
-`install.ps1` 是幂等的：
+`install.ps1` 与 `install.sh` 都是幂等的：
 
 1. 检查 Node.js 版本；
 2. 只有 npm 依赖缺失或不完整时才执行 `npm ci --ignore-scripts`；
-3. 只有 `tunnel-client.exe` 缺失时才查询 OpenAI 官方 GitHub Release；
-4. 根据 Windows x64/arm64 下载对应压缩包；
+3. 只有平台对应的 `tunnel-client` 缺失时才查询 OpenAI 官方 GitHub Release；
+4. 根据 Windows/Linux x64/arm64 下载对应压缩包；
 5. 使用同一 Release 的 `SHA256SUMS.txt` 校验后才安装；
 6. `.env` 不存在时从 `.env.example` 创建，绝不覆盖已有密钥。
 
@@ -147,6 +184,16 @@ New-Item -ItemType Directory -Force "C:\luna-workspaces\my-project"
 .\install.ps1 -ForceTunnelDownload
 .\start-all.ps1 -Workspace "C:\luna-workspaces\my-project"
 ```
+
+Linux 对应命令：
+
+```bash
+bash ./stop-all.sh
+bash ./install.sh --force-tunnel-download
+bash ./start-all.sh --workspace "$HOME/luna-workspaces/my-project"
+```
+
+Linux Tunnel 使用 `tunnel-client runtimes connect/status/stop` 的 managed runtime 机制；启动脚本只有在状态同时为 running、healthy、ready 时才报告成功。该做法遵循 Tunnel 客户端自己的长期运行建议，而不是用 `nohup` 托管 Tunnel。
 
 ## 安全边界
 
@@ -183,6 +230,9 @@ npm run test:admin
 npm run test:workspace
 npm run test:patch
 npm run test:artifact
+
+# Linux / WSL：验证安装与启停契约（使用本地假 Tunnel，不访问控制面）
+npm run test:linux
 ```
 
 v0.7.0 已达到“可靠工程编辑闭环 + 紧凑领域工具面”里程碑。近期版本的可执行任务、优先级和验收标准见 [TODO.md](TODO.md)，长期架构原则见 [AGENT_CAPABILITIES_ROADMAP.md](AGENT_CAPABILITIES_ROADMAP.md)。

@@ -58,11 +58,12 @@ sequenceDiagram
 
 ### 3.1 本机环境
 
-- Windows 10/11 x64 或 arm64；
-- PowerShell 5.1 或 PowerShell 7；
+- Windows 10/11 x64/arm64，或主流 x64/arm64 Linux；
+- Windows 使用 PowerShell 5.1/7；Linux 使用 Bash 4.3+；
 - [Node.js](https://nodejs.org/) 20 或更高版本；
 - Git（用于克隆仓库，非运行必需）；
-- 可以访问 `github.com`、`api.github.com` 和 `api.openai.com:443` 的网络。
+- 可以访问 `github.com`、`api.github.com` 和 `api.openai.com:443` 的网络；
+- Linux 安装脚本还需要 `curl`、`unzip`、`sha256sum`、`realpath`，Ubuntu/Debian 可运行 `sudo apt-get install -y curl unzip coreutils util-linux`。
 
 检查版本：
 
@@ -136,6 +137,8 @@ MCP_PORT=18765
 
 ## 6. 下载项目与一键安装
 
+Windows：
+
 ```powershell
 git clone https://github.com/terrywang1985/luna_unlimited.git
 cd luna_unlimited
@@ -143,20 +146,39 @@ Set-ExecutionPolicy -Scope Process Bypass
 .\install.ps1
 ```
 
+Linux：
+
+```bash
+git clone https://github.com/terrywang1985/luna_unlimited.git
+cd luna_unlimited
+bash ./install.sh
+nano .env
+chmod 600 .env
+```
+
 安装脚本会：
 
 1. 检查 Node.js 20+；
 2. 使用 `package-lock.json` 安装确定版本的 npm 依赖；
 3. 禁用 npm lifecycle scripts；
-4. 从 OpenAI 官方 [`openai/tunnel-client`](https://github.com/openai/tunnel-client/releases/latest) 最新 Release 下载匹配的 Windows 版本；
+4. 从 OpenAI 官方 [`openai/tunnel-client`](https://github.com/openai/tunnel-client/releases/latest) 最新 Release 下载匹配的 Windows/Linux x64/arm64 版本；
 5. 用官方 `SHA256SUMS.txt` 验证压缩包；
 6. 创建 `.env`，但不会覆盖已有 `.env`。
+
+Linux 的 `.env` 由脚本按 `NAME=value` 严格解析，不会执行 `source .env`，因此配置值不会被当成 Shell 命令。脚本会检查文件权限；建议始终保持 `chmod 600 .env`。
 
 反复执行 `install.ps1` 不会重复下载已存在的 Tunnel 客户端，也不会覆盖密钥。需要升级客户端时：
 
 ```powershell
 .\stop-all.ps1
 .\install.ps1 -ForceTunnelDownload
+```
+
+Linux 对应命令：
+
+```bash
+bash ./stop-all.sh
+bash ./install.sh --force-tunnel-download
 ```
 
 ## 7. 完整 `.env` 示例
@@ -196,15 +218,33 @@ MCP_MAX_OPERATION_ENTRIES=10000
 | `MCP_MAX_ARTIFACT_BYTES` | 单个导入、检查或导出的二进制文件上限 | 25 MiB |
 | `MCP_MAX_OPERATION_ENTRIES` | 单次递归移动/删除最多扫描条目 | 10000 |
 | `LUNA_STATE_DIR` | 可选私有状态目录，必须在 workspace 外 | 系统用户状态目录 |
+| `LUNA_TUNNEL_RUNTIME_ALIAS` | Linux managed runtime 的实例别名 | `luna-unlimited` |
 
 ## 8. 选择安全的 Workspace 并启动
 
 Workspace 是 AI 唯一可以访问的目录。推荐为每个工程建立独立目录：
 
+Windows：
+
 ```powershell
 New-Item -ItemType Directory -Force "C:\luna-workspaces\medium-app"
 .\start-all.ps1 -Workspace "C:\luna-workspaces\medium-app"
 ```
+
+Linux：
+
+```bash
+mkdir -p "$HOME/luna-workspaces/medium-app"
+bash ./start-all.sh --workspace "$HOME/luna-workspaces/medium-app"
+```
+
+Linux 服务器不需要公网 IP，也不要把 `MCP_PORT` 暴露到公网。MCP 与 Dashboard 继续仅监听 `127.0.0.1`；Tunnel 只需要访问 OpenAI `443` 的出站网络。若要从自己的电脑观察远程 Dashboard，可使用 SSH 端口转发：
+
+```bash
+ssh -L 18765:127.0.0.1:18765 user@linux-server
+```
+
+然后在本机浏览器打开 `http://127.0.0.1:18765/admin`。
 
 脚本会依次：
 
@@ -212,9 +252,9 @@ New-Item -ItemType Directory -Force "C:\luna-workspaces\medium-app"
 2. 只停止由本项目 PID 文件确认的旧进程；
 3. 启动本机 MCP；
 4. 等待 `/healthz`；
-5. 启动 Tunnel 客户端；
-6. 等待 Tunnel `/readyz`；
-7. 打开 Dashboard。
+5. 启动 Tunnel 客户端；Linux 使用其 managed runtime 监督机制；
+6. 等待 Tunnel 同时达到 running、healthy、ready；
+7. Windows 默认打开 Dashboard，Linux 仅在传入 `--open-browser` 时打开。
 
 启动成功后：
 
@@ -231,10 +271,21 @@ Dashboard: http://127.0.0.1:18765/admin
 .\start-all.ps1 -Workspace "C:\luna-workspaces\medium-app" -NoBrowser
 ```
 
+Linux 默认不打开浏览器；桌面环境需要自动打开时：
+
+```bash
+bash ./start-all.sh --workspace "$HOME/luna-workspaces/medium-app" --open-browser
+```
+
 停止：
 
 ```powershell
 .\stop-all.ps1
+```
+
+```bash
+bash ./doctor.sh
+bash ./stop-all.sh
 ```
 
 ## 9. 在 ChatGPT 开启 Developer mode
@@ -469,7 +520,7 @@ Dashboard 可以查看：
 
 - 任意 PowerShell/cmd/bash；
 - arbitrary Python/Rust/.NET/CMake 命令；
-- move/delete 和通用 unified diff patch；
+- 任意格式、无 revision 保护的文件修改（受控 move/delete 与原子 unified diff patch 已提供）；
 - Git push、force push、reset 或凭据操作；
 - 长期后台进程和浏览器自动测试；
 - 持久化本地 policy。

@@ -6,6 +6,8 @@
 # Installed dependencies and downloaded runtime
 node_modules/
 tunnel-client.exe
+tunnel-client
+.tunnel-client.*.tmp
 .npm-cache/
 
 # Runtime state and logs
