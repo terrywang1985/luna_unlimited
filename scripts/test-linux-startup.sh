@@ -7,6 +7,14 @@ SOURCE_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
   exit 0
 }
 
+# Node 20 parses stdin as CommonJS unless the installer explicitly selects
+# module input; keep the release lookup compatible with the declared Node 20+.
+grep -Fq 'node --input-type=module' "$SOURCE_DIR/install.sh" || {
+  printf 'install.sh must run its top-level-await release lookup as an ES module.\n' >&2
+  exit 1
+}
+node --input-type=module -e 'await Promise.resolve()'
+
 port=$((30000 + ($$ % 20000)))
 fixture="$(mktemp -d "${TMPDIR:-/tmp}/luna-linux-startup-test.XXXXXX")"
 runtime_source="$SOURCE_DIR"

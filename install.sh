@@ -51,7 +51,9 @@ else
   esac
 
   luna_log "Resolving the latest official OpenAI tunnel-client release..."
-  release_info="$(RELEASE_ARCH="$release_arch" node <<'NODE'
+  # Explicitly select ES module input. Node 20 otherwise parses stdin as
+  # CommonJS and rejects the top-level await used for the release lookup.
+  release_info="$(RELEASE_ARCH="$release_arch" node --input-type=module <<'NODE'
 const response = await fetch("https://api.github.com/repos/openai/tunnel-client/releases/latest", {
   headers: { Accept: "application/vnd.github+json", "User-Agent": "luna-unlimited-linux-installer" }
 });
