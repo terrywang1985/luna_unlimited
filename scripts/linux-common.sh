@@ -70,14 +70,7 @@ luna_env_required() {
   [[ -n "$value" && "$value" != *replace_with_* ]] || luna_die "Configure $key in .env before starting Luna."
 }
 
-luna_validate_runtime_config() {
-  luna_env_required CONTROL_PLANE_API_KEY
-  luna_env_required CONTROL_PLANE_TUNNEL_ID
-  luna_env_required MCP_SERVER_URL
-
-  [[ "${LUNA_ENV[CONTROL_PLANE_TUNNEL_ID]}" =~ ^tunnel_[A-Za-z0-9_-]+$ ]] ||
-    luna_die "CONTROL_PLANE_TUNNEL_ID does not look like a tunnel ID."
-
+luna_validate_mcp_config() {
   LUNA_MCP_PORT="${LUNA_ENV[MCP_PORT]:-18765}"
   [[ "$LUNA_MCP_PORT" =~ ^[0-9]+$ ]] || luna_die "MCP_PORT must be an integer between 10001 and 65535."
   (( LUNA_MCP_PORT >= 10001 && LUNA_MCP_PORT <= 65535 )) ||
@@ -85,7 +78,26 @@ luna_validate_runtime_config() {
 
   LUNA_MCP_HOST="${LUNA_ENV[MCP_HOST]:-127.0.0.1}"
   [[ "$LUNA_MCP_HOST" == "127.0.0.1" || "$LUNA_MCP_HOST" == "localhost" ]] ||
-    luna_die "MCP_HOST must remain 127.0.0.1 or localhost when Secure MCP Tunnel is used."
+    luna_die "MCP_HOST must remain 127.0.0.1 or localhost."
+
+  local default_state="${XDG_STATE_HOME:-$HOME/.local/state}/luna-unlimited"
+  LUNA_PRIVATE_STATE_DIR="${LUNA_ENV[LUNA_STATE_DIR]:-$default_state}"
+  if [[ "$LUNA_PRIVATE_STATE_DIR" != /* ]]; then
+    LUNA_PRIVATE_STATE_DIR="$LUNA_PROJECT_DIR/$LUNA_PRIVATE_STATE_DIR"
+  fi
+  mkdir -p -- "$LUNA_PRIVATE_STATE_DIR"
+  LUNA_PRIVATE_STATE_DIR="$(realpath -e -- "$LUNA_PRIVATE_STATE_DIR")"
+  chmod 700 "$LUNA_PRIVATE_STATE_DIR"
+}
+
+luna_validate_runtime_config() {
+  luna_validate_mcp_config
+  luna_env_required CONTROL_PLANE_API_KEY
+  luna_env_required CONTROL_PLANE_TUNNEL_ID
+  luna_env_required MCP_SERVER_URL
+
+  [[ "${LUNA_ENV[CONTROL_PLANE_TUNNEL_ID]}" =~ ^tunnel_[A-Za-z0-9_-]+$ ]] ||
+    luna_die "CONTROL_PLANE_TUNNEL_ID does not look like a tunnel ID."
 
   LUNA_MCP_TARGET="http://127.0.0.1:${LUNA_MCP_PORT}/mcp"
   local configured_target="${LUNA_ENV[MCP_SERVER_URL]}"
@@ -100,14 +112,6 @@ luna_validate_runtime_config() {
   [[ "$LUNA_RUNTIME_ALIAS" =~ ^[A-Za-z0-9._-]+$ ]] ||
     luna_die "LUNA_TUNNEL_RUNTIME_ALIAS may contain only letters, numbers, dot, underscore, and hyphen."
 
-  local default_state="${XDG_STATE_HOME:-$HOME/.local/state}/luna-unlimited"
-  LUNA_PRIVATE_STATE_DIR="${LUNA_ENV[LUNA_STATE_DIR]:-$default_state}"
-  if [[ "$LUNA_PRIVATE_STATE_DIR" != /* ]]; then
-    LUNA_PRIVATE_STATE_DIR="$LUNA_PROJECT_DIR/$LUNA_PRIVATE_STATE_DIR"
-  fi
-  mkdir -p -- "$LUNA_PRIVATE_STATE_DIR"
-  LUNA_PRIVATE_STATE_DIR="$(realpath -e -- "$LUNA_PRIVATE_STATE_DIR")"
-  chmod 700 "$LUNA_PRIVATE_STATE_DIR"
   LUNA_TUNNEL_CONFIG_HOME="$LUNA_PRIVATE_STATE_DIR/tunnel-client/config"
   LUNA_TUNNEL_STATE_HOME="$LUNA_PRIVATE_STATE_DIR/tunnel-client/state"
   LUNA_TUNNEL_PROFILE_DIR="$LUNA_TUNNEL_CONFIG_HOME/profiles"

@@ -152,6 +152,15 @@ bash ./doctor.sh
 bash ./stop-all.sh
 ```
 
+只调试或独立运行 MCP、不启动也不停止 Tunnel：
+
+```bash
+bash ./start-server.sh --workspace "$HOME/luna-workspaces/my-project"
+bash ./stop-server.sh
+```
+
+这两个 MCP-only 脚本不要求 `.env` 提供 `CONTROL_PLANE_API_KEY`、`CONTROL_PLANE_TUNNEL_ID` 或 `MCP_SERVER_URL`；如果已有 Tunnel managed runtime 正在运行，它会保持原状。
+
 默认地址：
 
 - MCP：`http://127.0.0.1:18765/mcp`
@@ -193,7 +202,7 @@ bash ./install.sh --force-tunnel-download
 bash ./start-all.sh --workspace "$HOME/luna-workspaces/my-project"
 ```
 
-Linux Tunnel 使用 `tunnel-client runtimes connect/status/stop` 的 managed runtime 机制；启动脚本只有在状态同时为 running、healthy、ready 时才报告成功。该做法遵循 Tunnel 客户端自己的长期运行建议，而不是用 `nohup` 托管 Tunnel。
+Linux Tunnel 使用 `tunnel-client runtimes connect/status/stop` 的 managed runtime 机制；`start-all.sh` 只有在状态同时为 running、healthy、ready 时才报告成功。该做法遵循 Tunnel 客户端自己的长期运行建议，而不是用 `nohup` 托管 Tunnel。仅需本地 MCP 时使用 `start-server.sh` / `stop-server.sh`，它们完全不管理 Tunnel。
 
 ## 安全边界
 

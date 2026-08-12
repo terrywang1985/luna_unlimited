@@ -59,7 +59,7 @@ cleanup() {
 trap cleanup EXIT
 
 mkdir -p -- "$fixture/scripts" "$fixture/workspace" "$fixture/private-state"
-cp -- "$SOURCE_DIR/start-all.sh" "$SOURCE_DIR/stop-all.sh" "$SOURCE_DIR/doctor.sh" "$fixture/"
+cp -- "$SOURCE_DIR/start-all.sh" "$SOURCE_DIR/stop-all.sh" "$SOURCE_DIR/start-server.sh" "$SOURCE_DIR/stop-server.sh" "$SOURCE_DIR/doctor.sh" "$fixture/"
 cp -- "$SOURCE_DIR/scripts/linux-common.sh" "$fixture/scripts/"
 cp -aL -- "$runtime_source/src" "$runtime_source/public" "$fixture/"
 ln -s -- "$runtime_source/node_modules" "$fixture/node_modules"
@@ -112,12 +112,35 @@ second_pid="$(cat "$fixture/logs/mcp-linux.pid")"
 [[ "$first_pid" != "$second_pid" ]] || { printf 'Idempotent restart did not replace the MCP process.\n' >&2; exit 1; }
 kill -0 "$second_pid"
 
+# MCP-only stop must leave the managed Tunnel runtime untouched.
+tunnel_state="$fixture/private-state/tunnel-client/state/fake-runtime-ready"
+[[ -f "$tunnel_state" ]] || { printf 'Tunnel fixture was not running before MCP-only test.\n' >&2; exit 1; }
+bash "$fixture/stop-server.sh" --quiet
+[[ -f "$tunnel_state" ]] || { printf 'stop-server.sh changed Tunnel state.\n' >&2; exit 1; }
+if curl --fail --silent --max-time 1 "http://127.0.0.1:${port}/healthz" >/dev/null 2>&1; then
+  printf 'MCP remained reachable after stop-server.sh.\n' >&2
+  exit 1
+fi
+
+# MCP-only start must work without any Tunnel credentials and must not call the
+# fake tunnel-client.
+grep -Ev '^(CONTROL_PLANE_API_KEY|CONTROL_PLANE_TUNNEL_ID|MCP_SERVER_URL)=' "$fixture/.env" > "$fixture/.env.mcp-only"
+mv -- "$fixture/.env.mcp-only" "$fixture/.env"
+chmod 600 "$fixture/.env"
+bash "$fixture/start-server.sh" --skip-install --workspace "$fixture/workspace" >/dev/null
+curl --fail --silent --show-error "http://127.0.0.1:${port}/healthz" >/dev/null
+[[ -f "$tunnel_state" ]] || { printf 'start-server.sh changed Tunnel state.\n' >&2; exit 1; }
+bash "$fixture/stop-server.sh" --quiet
+bash "$fixture/stop-server.sh" --quiet
+[[ -f "$tunnel_state" ]] || { printf 'Repeated MCP-only stop changed Tunnel state.\n' >&2; exit 1; }
+
 bash "$fixture/stop-all.sh" --quiet
 bash "$fixture/stop-all.sh" --quiet
 [[ ! -e "$fixture/logs/mcp-linux.pid" ]] || { printf 'MCP PID file remained after stop.\n' >&2; exit 1; }
+[[ ! -e "$tunnel_state" ]] || { printf 'stop-all.sh did not stop the Tunnel fixture.\n' >&2; exit 1; }
 if curl --fail --silent --max-time 1 "http://127.0.0.1:${port}/healthz" >/dev/null 2>&1; then
   printf 'MCP server remained reachable after stop.\n' >&2
   exit 1
 fi
 
-printf 'PASS: Linux install/start/doctor/restart/stop contract smoke test\n'
+printf 'PASS: Linux combined and MCP-only lifecycle contract smoke test\n'

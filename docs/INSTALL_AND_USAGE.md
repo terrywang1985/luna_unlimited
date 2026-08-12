@@ -288,6 +288,15 @@ bash ./doctor.sh
 bash ./stop-all.sh
 ```
 
+只启动和停止 MCP Server，不启动、不停止、不重新配置 Tunnel：
+
+```bash
+bash ./start-server.sh --workspace "$HOME/luna-workspaces/medium-app"
+bash ./stop-server.sh
+```
+
+MCP-only 脚本只读取 `MCP_*`、`LUNA_STATE_DIR` 和 workspace 配置，不要求 `.env` 中存在 Runtime API Key、Tunnel ID 或 `MCP_SERVER_URL`。这适合先在 Linux 上检查 Dashboard/MCP Inspector，或者在 Tunnel 已由其他方式管理时单独重启 Luna Core。`stop-server.sh` 只停止经过 PID、Node 可执行文件和 `src/server.mjs` 命令行共同确认的进程，不触碰 Tunnel managed runtime。
+
 ## 9. 在 ChatGPT 开启 Developer mode
 
 进入 ChatGPT 的 **Settings**。
