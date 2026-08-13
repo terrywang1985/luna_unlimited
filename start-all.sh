@@ -6,6 +6,7 @@ LUNA_PROJECT_DIR="$PROJECT_DIR"
 source "$PROJECT_DIR/scripts/linux-common.sh"
 
 workspace=""
+execution_profile=""
 skip_install=0
 open_browser=0
 while (($#)); do
@@ -15,11 +16,16 @@ while (($#)); do
       workspace="$2"
       shift 2
       ;;
+    --execution-profile)
+      (($# >= 2)) || luna_die "--execution-profile requires restricted, user, container-root, or host-root."
+      execution_profile="$2"
+      shift 2
+      ;;
     --skip-install) skip_install=1; shift ;;
     --open-browser) open_browser=1; shift ;;
     -h|--help)
       cat <<'EOF'
-Usage: bash ./start-all.sh [--workspace /absolute/path] [--skip-install] [--open-browser]
+Usage: bash ./start-all.sh [--workspace /absolute/path] [--execution-profile PROFILE] [--skip-install] [--open-browser]
 
 Starts the Luna MCP server and an OpenAI tunnel-client managed runtime.
 The default workspace is MCP_WORKSPACE_ROOT from .env, or ./workspace.
@@ -43,6 +49,9 @@ luna_require_command realpath
 luna_load_env
 luna_validate_runtime_config
 luna_export_core_env
+if [[ -n "$execution_profile" ]]; then
+  export LUNA_EXECUTION_PROFILE="$execution_profile"
+fi
 luna_resolve_workspace "$workspace"
 luna_control_lock
 
@@ -129,5 +138,6 @@ luna_log "Luna Unlimited started."
 printf 'MCP:        http://127.0.0.1:%s/mcp\n' "$LUNA_MCP_PORT"
 printf 'Dashboard: %s\n' "$dashboard_url"
 printf 'Workspace: %s\n' "$LUNA_WORKSPACE"
+printf 'Execution: %s\n' "${LUNA_EXECUTION_PROFILE:-restricted}"
 printf 'MCP PID:   %s\n' "$(cat "$PROJECT_DIR/logs/mcp-linux.pid")"
 printf 'Tunnel:    managed runtime %s (running, healthy, ready)\n' "$LUNA_RUNTIME_ALIAS"

@@ -1,7 +1,7 @@
 import path from "node:path";
 import { publicToolSummary } from "./actions.mjs";
 
-export function buildCapabilities({ workspace, policy, limits, adapter = "unknown", protocolVersion = "unknown" }) {
+export function buildCapabilities({ workspace, policy, limits, execution, adapter = "unknown", protocolVersion = "unknown" }) {
   const snapshot = policy.snapshot();
   const tools = publicToolSummary(policy);
   const actions = Object.fromEntries(policy.actionRows().map((action) => [
@@ -17,7 +17,7 @@ export function buildCapabilities({ workspace, policy, limits, adapter = "unknow
   ]));
 
   return {
-    server: { name: "luna-unlimited", version: "0.7.0" },
+    server: { name: "luna-unlimited", version: "0.8.0" },
     protocol: { adapter, version: protocolVersion },
     workspace: { rootName: path.basename(workspace.root), writable: true },
     features: {
@@ -27,6 +27,8 @@ export function buildCapabilities({ workspace, policy, limits, adapter = "unknow
       revision: true,
       batchWrite: true,
       exec: true,
+      systemExecution: execution.profile !== "restricted",
+      rootExecution: execution.root && ["container-root", "host-root"].includes(execution.profile),
       dependencyInstall: true,
       publicRepositoryClone: true,
       commandProjectBoundary: true,
@@ -56,6 +58,14 @@ export function buildCapabilities({ workspace, policy, limits, adapter = "unknow
       maxOperationEntries: limits.maxOperationEntries,
       maxRepositoryFiles: limits.maxOperationEntries,
       maxRepositoryBytes: limits.maxCheckpointBytes
+    },
+    execution: {
+      profile: execution.profile,
+      platform: execution.platform,
+      effectiveUid: execution.uid,
+      container: execution.container,
+      root: execution.root,
+      requiresLocalApproval: true
     },
     policy: {
       version: snapshot.version,

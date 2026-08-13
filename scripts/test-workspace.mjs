@@ -2,7 +2,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
 const endpoint = new URL(process.env.MCP_TEST_URL || "http://127.0.0.1:18765/mcp");
-const client = new Client({ name: "luna-real-workspace-test", version: "0.7.0" });
+const client = new Client({ name: "luna-real-workspace-test", version: "0.8.0" });
 const transport = new StreamableHTTPClientTransport(endpoint);
 
 try {

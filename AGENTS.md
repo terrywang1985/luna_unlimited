@@ -40,10 +40,11 @@ agent_comms/desktop_to_web.md
 
 Stage 0、Milestone A/B 和 v0.6.5 前的可靠编辑闭环已经完成。v0.7.0 经项目所有者明确授权进行了破坏性 Tool Surface 重构：旧的 23 个平铺 MCP Tool 已全部删除，不建立 legacy Adapter，也不得重新暴露。
 
-当前 MCP 必须只暴露以下 13 个领域工具：
+当前 MCP 必须只暴露以下 14 个领域工具：
 
 ```text
 luna.capabilities
+system.execute
 workspace.read
 workspace.write
 workspace.manage
@@ -62,7 +63,7 @@ project.dependencies
 
 `scripts/test-contract.mjs` 至少锁定：
 
-1. 13 个公开 Tool 的精确名称，且旧平铺 Tool 不再出现；
+1. 14 个公开 Tool 的精确名称，且旧平铺 Tool 不再出现；
 2. `request.oneOf` 中的 operation 名称和参数结构；
 3. 成功返回结构和关键文本/JSON 字段；
 4. workspace / sensitive path 安全边界；
@@ -71,7 +72,7 @@ project.dependencies
 7. audit event 使用真实 Action id；
 8. Git 参数不允许从 `project.execute` 绕过 typed Git operation。
 
-当前 v0.7.0 已完成 Action Registry / Compact Domain Tool Surface。下一阶段按 TODO 推进 policy persistence、project task 或 process manager，不重复实现既有 checkpoint、patch、Artifact Bridge 和公开 GitHub Clone。
+当前 v0.8.0 已完成 Action Registry / Compact Domain Tool Surface 和显式系统/root 执行档位。下一阶段按 TODO 推进 policy persistence、project task 或 process manager，不重复实现既有 checkpoint、patch、Artifact Bridge、公开 GitHub Clone 和系统执行档位。
 
 ## 架构硬约束
 

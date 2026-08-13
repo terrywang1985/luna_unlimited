@@ -219,6 +219,7 @@ MCP_MAX_OPERATION_ENTRIES=10000
 | `MCP_MAX_OPERATION_ENTRIES` | 单次递归移动/删除最多扫描条目 | 10000 |
 | `LUNA_STATE_DIR` | 可选私有状态目录，必须在 workspace 外 | 系统用户状态目录 |
 | `LUNA_TUNNEL_RUNTIME_ALIAS` | Linux managed runtime 的实例别名 | `luna-unlimited` |
+| `LUNA_EXECUTION_PROFILE` | 系统命令档位：`restricted/user/container-root/host-root` | `restricted` |
 
 ## 8. 选择安全的 Workspace 并启动
 
@@ -237,6 +238,16 @@ Linux：
 mkdir -p "$HOME/luna-workspaces/medium-app"
 bash ./start-all.sh --workspace "$HOME/luna-workspaces/medium-app"
 ```
+
+默认 `restricted` 禁用 `system.execute`。需要让 Agent 运行普通用户命令、容器内 root 命令或宿主机 root 命令时，必须由机器所有者显式启动对应档位：
+
+```bash
+bash ./start-all.sh --workspace "$HOME/luna-workspaces/medium-app" --execution-profile user
+bash ./start-all.sh --workspace /workspace --execution-profile container-root
+sudo bash ./start-all.sh --workspace /srv/luna-workspace --execution-profile host-root
+```
+
+`user` 在 Linux 上拒绝 UID 0；两个 root 档位会分别验证 UID 0 和容器/宿主机环境。远端 Agent 与 Dashboard 都不能升级执行档位。每次 `system.execute` 均强制在本地 Dashboard 逐次审批，即使全局审批为观察模式也不会自动运行。多租户产品只应在非 privileged、无 Docker socket、无宿主机目录挂载的隔离容器中启用 `container-root`。
 
 Linux 服务器不需要公网 IP，也不要把 `MCP_PORT` 暴露到公网。MCP 与 Dashboard 继续仅监听 `127.0.0.1`；Tunnel 只需要访问 OpenAI `443` 的出站网络。若要从自己的电脑观察远程 Dashboard，可使用 SSH 端口转发：
 
@@ -292,6 +303,7 @@ bash ./stop-all.sh
 
 ```bash
 bash ./start-server.sh --workspace "$HOME/luna-workspaces/medium-app"
+bash ./start-server.sh --workspace /srv/luna-workspace --execution-profile host-root
 bash ./stop-server.sh
 ```
 

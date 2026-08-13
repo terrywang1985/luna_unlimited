@@ -1,13 +1,13 @@
 {
   "name": "luna-local-files-mcp",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "private": true,
   "type": "module",
   "license": "Apache-2.0",
   "description": "Vendor-neutral local Agent capability runtime with an MCP adapter and local safety controls",
   "scripts": {
     "start": "node src/server.mjs",
-    "test": "node scripts/test-architecture.mjs && node scripts/test-checkpoint-core.mjs && node scripts/test-patch-core.mjs && node scripts/test-artifact-core.mjs && node scripts/test-repository-core.mjs && node scripts/test-contract.mjs && node scripts/test-reliable-project.mjs && node scripts/test-checkpoint.mjs",
+    "test": "node scripts/test-architecture.mjs && node scripts/test-checkpoint-core.mjs && node scripts/test-patch-core.mjs && node scripts/test-artifact-core.mjs && node scripts/test-repository-core.mjs && node scripts/test-system-command-core.mjs && node scripts/test-contract.mjs && node scripts/test-reliable-project.mjs && node scripts/test-checkpoint.mjs",
     "test:architecture": "node scripts/test-architecture.mjs",
     "test:contract": "node scripts/test-contract.mjs",
     "test:reliable": "node scripts/test-reliable-project.mjs",
@@ -15,6 +15,7 @@
     "test:patch": "node scripts/test-patch-core.mjs && node scripts/test-patch.mjs",
     "test:artifact": "node scripts/test-artifact-core.mjs && node scripts/test-artifact.mjs",
     "test:repository": "node scripts/test-repository-core.mjs",
+    "test:system-command": "node scripts/test-system-command-core.mjs",
     "test:linux": "bash scripts/test-linux-startup.sh",
     "test:mcp": "node scripts/test-mcp.mjs",
     "test:admin": "node scripts/test-admin.mjs",

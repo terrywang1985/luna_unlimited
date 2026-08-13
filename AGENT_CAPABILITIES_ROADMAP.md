@@ -18,7 +18,7 @@
 >
 > 核心原则：**协议可换，模型可换，Host 可换，本地能力和安全策略不换。**
 >
-> v0.7.0 之后的近期版本任务、优先级和完成标准统一维护在 [TODO.md](TODO.md)；本文继续作为长期架构与安全约束。
+> v0.8.0 之后的近期版本任务、优先级和完成标准统一维护在 [TODO.md](TODO.md)；本文继续作为长期架构与安全约束。
 
 ---
 
@@ -170,7 +170,7 @@ get_capabilities()
 {
   "server": {
     "name": "luna-unlimited",
-    "version": "0.7.0"
+    "version": "0.8.0"
   },
   "protocol": {
     "adapter": "mcp",
@@ -220,10 +220,11 @@ Agent 每次新连接都可以先探测能力，而不是依赖模型记忆。
 
 # 2. 当前能力
 
-当前 v0.7.0 对 Host 暴露 13 个 Compact Domain Tools，并由 26 个 Core Actions 承载细粒度安全语义。旧的 23 个平铺 Tool 已在项目尚无外部用户时一次性删除，不保留 legacy Adapter：
+当前 v0.8.0 对 Host 暴露 14 个 Compact Domain Tools，并由 27 个 Core Actions 承载细粒度安全语义。旧的 23 个平铺 Tool 已在项目尚无外部用户时一次性删除，不保留 legacy Adapter：
 
 ```text
 luna.capabilities
+system.execute
 workspace.read
 workspace.write
 workspace.manage
@@ -237,6 +238,8 @@ git.remote
 project.execute
 project.dependencies
 ```
+
+`system.execute` 只在本机所有者显式选择 `user`、`container-root` 或 `host-root` 执行档位时启用。该 Action 无条件要求本地逐次审批；全局观察模式不能绕过。root 档位必须验证 Linux effective UID，并区分容器 root 与宿主机 root。远端调用不能修改执行档位，restricted 也不能从 Dashboard 临时升级。
 
 现有安全边界：
 
@@ -274,7 +277,7 @@ discover → inspect/hash → search/read → atomic batch write/patch → insta
 
 本轮已补齐中等规模工程创建最关键的可靠性底座：安全 capability discovery、已有文件 SHA-256 冲突保护、进程内 per-file mutation queue、整批验证与失败回滚、禁止 npm lifecycle scripts 的受控依赖安装，以及命令侧不越过 workspace 的项目发现边界。
 
-尚未完成的完整工作站 Agent 能力包括私有仓库 OAuth、Excel 单元格编辑、PDF 提取/渲染、policy persistence、长进程和结构化 diagnostics。它们仍按后续 Milestone 推进，不应把 v0.7.0 宣称为完整文档处理 Runtime。
+尚未完成的完整工作站 Agent 能力包括私有仓库 OAuth、Excel 单元格编辑、PDF 提取/渲染、policy persistence、长进程和结构化 diagnostics。它们仍按后续 Milestone 推进，不应把 v0.8.0 宣称为完整文档处理 Runtime。
 
 ---
 
@@ -1075,7 +1078,7 @@ process.control    # start / stop
 
 ## Stage 0：历史行为锁定测试（Milestone A 前置，已完成）
 
-这是 Milestone A 重构时采用的历史基线。v0.7.0 经项目所有者授权主动替换了这份外部 Contract；旧 7/23 Tool 不再作为兼容目标，当前契约以第 12 节的 13 个 Compact Domain Tool 为准。
+这是 Milestone A 重构时采用的历史基线。v0.7.0 经项目所有者授权主动替换了这份外部 Contract；旧 7/23 Tool 不再作为兼容目标，当前契约以第 12 节的 Compact Domain Tool 为准。v0.8.0 又新增了独立的 `system.execute` 领域工具。
 
 至少锁定：
 
@@ -1107,7 +1110,7 @@ process.control    # start / stop
 
 完成标志：
 
-> 不修改 Core，仅增加 Adapter 就理论上能接入另一个 Agent Host。v0.7.0 之后的 Adapter contract 由 13 个 Compact Domain Tool 测试锁定。
+> 不修改 Core，仅增加 Adapter 就理论上能接入另一个 Agent Host。v0.8.0 的 Adapter contract 由 14 个 Compact Domain Tool 测试锁定。
 
 ---
 

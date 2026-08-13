@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { registerAdminRoutes } from "./adapters/http-admin.mjs";
 import { createMcpApp } from "./adapters/mcp.mjs";
 import { createLunaCore } from "./core/runtime.mjs";
+import { SystemCommandService } from "./core/system-commands.mjs";
 
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
 const projectDir = path.resolve(moduleDir, "..");
@@ -19,6 +20,7 @@ const maxCheckpointBytes = Number.parseInt(process.env.MCP_MAX_CHECKPOINT_BYTES 
 const maxCheckpoints = Number.parseInt(process.env.MCP_MAX_CHECKPOINTS || "20", 10);
 const maxArtifactBytes = Number.parseInt(process.env.MCP_MAX_ARTIFACT_BYTES || String(25 * 1024 * 1024), 10);
 const maxOperationEntries = Number.parseInt(process.env.MCP_MAX_OPERATION_ENTRIES || "10000", 10);
+const executionProfile = process.env.LUNA_EXECUTION_PROFILE || "restricted";
 const defaultStateDir = process.platform === "win32"
   ? path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local"), "LunaUnlimited")
   : path.join(process.env.XDG_STATE_HOME || path.join(os.homedir(), ".local", "state"), "luna-unlimited");
@@ -27,6 +29,7 @@ const checkpointRoot = path.join(stateDir, "checkpoints");
 const logsDir = path.join(projectDir, "logs");
 const adminPagePath = path.join(projectDir, "public", "admin.html");
 const startedAt = new Date();
+const runtimeIdentity = await SystemCommandService.inspectRuntime(executionProfile);
 
 if (!Number.isInteger(port) || port < 1 || port > 65535) {
   throw new Error("MCP_PORT must be an integer between 1 and 65535");
@@ -67,7 +70,9 @@ const core = await createLunaCore({
   maxCheckpointBytes,
   maxCheckpoints,
   maxArtifactBytes,
-  maxOperationEntries
+  maxOperationEntries,
+  executionProfile,
+  runtimeIdentity
 });
 const app = createMcpApp({ host, core });
 registerAdminRoutes(app, { core, adminPagePath, logsDir, host, port, startedAt });
@@ -80,6 +85,7 @@ const httpServer = app.listen(port, host, (error) => {
   }
   console.log(`Luna Unlimited MCP listening at http://${host}:${port}/mcp`);
   console.log(`Workspace: ${workspaceRoot}`);
+  console.log(`Execution profile: ${executionProfile} (uid=${runtimeIdentity.uid ?? "n/a"}, container=${runtimeIdentity.container})`);
 });
 
 async function shutdown() {

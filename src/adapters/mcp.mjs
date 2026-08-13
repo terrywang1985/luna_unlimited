@@ -55,10 +55,10 @@ function gitLogArgs(input) {
 
 function createMcpServer(core, context) {
   const server = new McpServer(
-    { name: "luna-unlimited", version: "0.7.0" },
+    { name: "luna-unlimited", version: "0.8.0" },
     {
       instructions:
-        "Call luna.capabilities first. Tools are grouped by domain; select the operation field inside each domain tool. Use workspace.read(stat) before changing an existing file, code.patch for revision-protected code edits, artifact tools for binary files, and checkpoint.write(create) before risky refactors."
+        "Call luna.capabilities first. Tools are grouped by domain; select the operation field inside each domain tool. Use workspace.read(stat) before changing an existing file, code.patch for revision-protected code edits, artifact tools for binary files, and checkpoint.write(create) before risky refactors. system.execute is available only when the local owner explicitly selects an execution profile and every call requires local Dashboard approval."
     }
   );
 
@@ -91,6 +91,31 @@ function createMcpServer(core, context) {
       adapter: "mcp",
       protocolVersion: LATEST_PROTOCOL_VERSION
     }, context)
+  );
+
+  server.registerTool(
+    "system.execute",
+    {
+      title: "Execute a locally approved system command",
+      description: "Run one program with typed arguments under the locally selected user/container-root/host-root profile. Every call pauses for one-time approval in the local Luna Dashboard; shell parsing is never implicit.",
+      inputSchema: {
+        operation: z.literal("run").default("run"),
+        program: z.string().min(1).max(300),
+        args: z.array(z.string().max(2000)).max(100).default([]),
+        cwd: relativePath.default("."),
+        timeout_seconds: z.number().int().min(1).max(900).default(120)
+      },
+      annotations: { readOnlyHint: false, openWorldHint: true, destructiveHint: true }
+    },
+    async ({ program, args, cwd, timeout_seconds }) => {
+      const display = core.systemCommands.preview({ program, args });
+      return action(core, "system.execute", {
+        program,
+        args,
+        cwd,
+        timeoutSeconds: timeout_seconds
+      }, context, `SYSTEM COMMAND [${core.execution.profile}]\n${display}\ncwd: ${cwd}\nOne-time local approval required.`);
+    }
   );
 
   server.registerTool(

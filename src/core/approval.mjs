@@ -54,9 +54,11 @@ export class ApprovalManager {
     return true;
   }
 
-  disableAndDenyPending() {
-    for (const id of [...this.pending.keys()]) {
-      this.finish(id, false, "approval_mode_disabled");
+  denyPendingNoLongerRequired() {
+    for (const [id, approval] of this.pending) {
+      if (!this.policy.requiresApproval(approval.action)) {
+        this.finish(id, false, "approval_mode_disabled");
+      }
     }
   }
 
@@ -66,7 +68,12 @@ export class ApprovalManager {
 
   list() {
     const pending = [...this.pending.values()].map(({ timer: _timer, resolve: _resolve, ...approval }) => approval);
-    return { enabled: this.policy.approvalEnabled, pending, recent: this.recent };
+    return {
+      enabled: this.policy.approvalEnabled,
+      mandatoryActions: [...this.policy.mandatoryApprovalActions],
+      pending,
+      recent: this.recent
+    };
   }
 
   get size() {

@@ -1,6 +1,6 @@
 # Luna Unlimited · 后续迭代 TODO
 
-> 基线版本：v0.7.0（2026-08-12）
+> 基线版本：v0.8.0（2026-08-13）
 >
 > 当前里程碑：**可靠工程编辑闭环**。任意兼容 Host 已能在单个授权 workspace 内完成 capability discovery、代码读取与搜索、带 revision 的原子修改、依赖安装、构建/测试、checkpoint/restore，以及 Artifact 双向传输。这个基线已经能够支持人工发起、Agent 持续调用工具的中等规模工程开发。
 
@@ -16,8 +16,9 @@
 - [x] v0.6.4：正式 Host `fileParams` 导入链路、DNS pinning 与 Node 22 HTTPS 兼容。
 - [x] v0.6.5：受限公开 GitHub `clone_repository`，包含无凭据 HTTPS、DNS/Host 策略、临时目录校验、大小限制、原子提交、审批和审计。
 - [x] v0.7.0：破坏性 Compact Domain Tool 重构。公开 MCP Tool 从 23 个收敛为 13 个，旧平铺 Tool 全部删除；26 个细粒度 Core Action 独立承载 permission、approval、risk 和 audit；多操作 Schema 通过 `request.oneOf` 对 Host 可见。
+- [x] v0.8.0：新增显式 `restricted / user / container-root / host-root` 执行档位与 `system.execute`。restricted 不能被 Dashboard 绕过；root 档位验证 Linux UID/容器边界；系统命令始终强制本地逐次审批，审计仅保存命令 hash 和脱敏元数据。
 
-## v0.8 · 持久安全策略与项目任务
+## v0.8.x · 持久安全策略与项目任务
 
 目标：重启后权限不漂移，并让工程命令来自本机可信策略，而不是仅依赖 Agent 可修改的项目脚本。
 
@@ -27,7 +28,7 @@
 - [ ] 每次有效变更递增 `policyRevision`，Dashboard 展示版本、revision、加载状态和错误。
 - [ ] 定义 `read / write / build / network / system` 风险等级。
 - [ ] 将 npm 等可变 manifest 脚本视为 workspace 可变代码；记录 manifest hash，变更后重新审批。
-- [ ] 增加本机受保护的 project task 定义和 `run_project_command`，不开放任意 shell。
+- [ ] 增加本机受保护的 project task 定义和 `run_project_command`，让常用低风险任务无需使用高权限 `system.execute`。
 - [ ] 增加 migration、损坏配置、原子写失败、权限重启恢复及 mutable manifest 绕过测试。
 
 完成标准：
@@ -39,7 +40,7 @@
 目标：补齐“启动项目 → 观察输出 → 调接口 → 修改 → 重试”的开发循环。
 
 - [ ] 实现 `start_process`、`list_processes`、`get_process`、`read_process_output`、`stop_process`。
-- [ ] 只允许启动 v0.8 中授权的 project task；禁止裸 shell 和任意系统命令。
+- [ ] 默认只允许启动 v0.8.x 中授权的 project task；如复用 `system.execute`，必须继承其执行档位、强制审批与审计约束。
 - [ ] Luna 只能管理自己启动的进程，并记录 owner session、PID、task revision 和 cwd。
 - [ ] 增加 TTL、并发上限、输出环形缓冲、输出截断、超时和退出状态。
 - [ ] Luna 退出时采用明确的子进程清理策略，异常重启后识别并处理孤儿状态。
@@ -96,7 +97,7 @@
 
 以下能力只有在独立 policy、显式本机授权和完整审计具备后才评估，不能为了“更像桌面 Agent”直接开放：
 
-- 任意 PowerShell、cmd、bash 或 `shell=true`；
+- 默认或静默开放 PowerShell、cmd、bash 或 `shell=true`；显式系统执行档位下只能逐次本地审批；
 - 自动 Git push、force push、远端/凭据修改；
 - 任意公网访问和任意软件下载；
 - 读取 `.env`、SSH key、浏览器 Cookie、Tunnel credential 等秘密；

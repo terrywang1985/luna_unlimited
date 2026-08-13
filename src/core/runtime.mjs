@@ -16,6 +16,7 @@ import { PatchService } from "./patch.mjs";
 import { PolicyService } from "./policy.mjs";
 import { RepositoryService } from "./repositories.mjs";
 import { SearchService } from "./search.mjs";
+import { SystemCommandService } from "./system-commands.mjs";
 import { WorkspaceService } from "./workspace.mjs";
 
 export class LunaCore {
@@ -31,7 +32,9 @@ export class LunaCore {
     maxCheckpoints = 20,
     maxArtifactBytes = 25 * 1024 * 1024,
     maxOperationEntries = 10000,
-    maxAuditEntries = 500
+    maxAuditEntries = 500,
+    executionProfile = "restricted",
+    runtimeIdentity = { platform: process.platform, uid: null, container: false, root: false }
   }) {
     this.workspace = new WorkspaceService(workspaceRoot);
     this.limits = {
@@ -42,9 +45,13 @@ export class LunaCore {
       maxCheckpointBytes,
       maxCheckpoints,
       maxArtifactBytes,
-      maxOperationEntries
+      maxOperationEntries,
+      executionProfile
     };
-    this.policy = new PolicyService();
+    this.execution = { profile: executionProfile, ...runtimeIdentity };
+    this.policy = new PolicyService({
+      disabledActions: executionProfile === "restricted" ? ["system.execute"] : []
+    });
     this.approvals = new ApprovalManager({ policy: this.policy });
     this.audit = new AuditStore({ auditLogPath: path.join(logsDir, "audit.jsonl"), maxEntries: maxAuditEntries });
     this.mutations = new FileMutationQueue();
@@ -73,6 +80,12 @@ export class LunaCore {
       maxBatchBytes
     });
     this.commands = new CommandService({ workspace: this.workspace, mutations: this.mutations, maxCommandOutputBytes });
+    this.systemCommands = new SystemCommandService({
+      workspace: this.workspace,
+      maxCommandOutputBytes,
+      executionProfile,
+      runtimeIdentity
+    });
     this.repositories = new RepositoryService({
       workspace: this.workspace,
       mutations: this.mutations,
@@ -92,6 +105,7 @@ export class LunaCore {
 
     this.actionHandlers = {
       "system.capabilities": (request) => this.getCapabilities(request),
+      "system.execute": (request) => this.systemCommands.execute(request),
       "workspace.list": (request) => this.files.listDirectory(request),
       "workspace.stat": (request) => this.files.statPath(request),
       "workspace.read_text": (request) => this.files.readTextFile(request),
@@ -125,6 +139,7 @@ export class LunaCore {
       workspace: this.workspace,
       policy: this.policy,
       limits: this.limits,
+      execution: this.execution,
       adapter,
       protocolVersion
     });
@@ -245,6 +260,15 @@ export class LunaCore {
   }
 
   setActionPermission(action, enabled) {
+    if (action === "system.execute" && this.execution.profile === "restricted" && enabled) {
+      this.audit.record({
+        tool: "admin.permission",
+        path: action,
+        status: "denied",
+        details: { reason: "Execution profile is restricted; restart Luna with an explicit execution profile" }
+      });
+      return { id: action, enabled: false, locked: true };
+    }
     if (!this.policy.setActionEnabled(action, enabled)) return null;
     this.audit.record({ tool: "admin.permission", path: action, status: "success", details: { enabled } });
     return { id: action, enabled: this.policy.isActionEnabled(action) };
@@ -252,7 +276,7 @@ export class LunaCore {
 
   setApprovalEnabled(enabled) {
     this.policy.setApprovalEnabled(enabled);
-    if (!enabled) this.approvals.disableAndDenyPending();
+    if (!enabled) this.approvals.denyPendingNoLongerRequired();
     this.audit.record({ tool: "admin.approval_policy", status: "success", details: { enabled } });
     return { enabled: this.policy.approvalEnabled };
   }
@@ -285,6 +309,10 @@ export class LunaCore {
         approvalAvailable: true,
         approvalTimeoutSeconds: policy.approvalTimeoutSeconds,
         protectedActions: policy.protectedActions,
+        mandatoryApprovalActions: policy.mandatoryApprovalActions,
+        executionProfile: this.execution.profile,
+        effectiveUid: this.execution.uid,
+        containerRuntime: this.execution.container,
         checkpointBackend: this.checkpoints.backend,
         maxCheckpoints: this.limits.maxCheckpoints,
         maxCheckpointFiles: this.limits.maxCheckpointFiles,
@@ -295,6 +323,7 @@ export class LunaCore {
       actions: this.policy.actionRows(),
       approval: {
         enabled: policy.approvalEnabled,
+        mandatoryActions: policy.mandatoryApprovalActions,
         pendingCount: this.approvals.size,
         timeoutSeconds: policy.approvalTimeoutSeconds
       },

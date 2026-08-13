@@ -40,16 +40,18 @@ flowchart LR
 - 受控安装 npm 依赖，强制禁用 lifecycle scripts；
 - 将公开 GitHub 仓库安全、浅层、原子地克隆到 workspace 新目录；
 - 运行白名单内的 Git、Go、npm build/test/lint/typecheck 命令；
+- 可选启用 `user`、`container-root` 或 `host-root` 系统执行档位；每一条系统命令都必须在本地 Dashboard 逐次批准；
 - 命令侧项目发现不会越过授权 workspace：Git 仓库、npm manifest 和 Go module 必须位于授权边界内；
 - 文件搜索不会继承 workspace 父目录仓库的 ignore 规则；
 - 在本机 Dashboard 查看权限、运行状态、审批队列和审计日志；
 - 拒绝绝对路径、`..`、符号链接逃逸、`.env`、私钥和常见凭据文件。
 
-当前版本只向 Host 暴露 13 个按领域和风险边界组织的 MCP 工具；实际权限、审批和审计继续落在 26 个细粒度 Core Action 上：
+当前版本只向 Host 暴露 14 个按领域和风险边界组织的 MCP 工具；实际权限、审批和审计继续落在 27 个细粒度 Core Action 上：
 
 | 分类 | 工具 |
 | --- | --- |
 | 能力发现 | `luna.capabilities` |
+| 系统执行 | `system.execute`（启动时显式选择执行档位后启用） |
 | Workspace | `workspace.read`, `workspace.write`, `workspace.manage` |
 | 可靠补丁 | `code.patch` |
 | Artifact | `artifact.read`, `artifact.import` |
@@ -113,6 +115,28 @@ bash ./start-all.sh --workspace "$HOME/luna-workspaces/my-project"
 
 Linux 不需要开放 `18765` 入站端口。Luna 仍只监听 `127.0.0.1`，`tunnel-client` 主动通过出站 HTTPS 连接 OpenAI。
 
+### Linux 系统与 root 执行档位
+
+默认 `restricted` 不开放系统命令。需要完整工程机能力时，必须由机器所有者在本地启动时显式选择：
+
+```bash
+# 继承当前非 root Linux 账号权限
+bash ./start-all.sh --workspace "$HOME/luna-workspaces/my-project" --execution-profile user
+
+# 在隔离容器内以 UID 0 运行；Luna 会验证自己确实位于容器中
+bash ./start-all.sh --workspace /workspace --execution-profile container-root
+
+# 在 Linux 宿主机以 UID 0 运行；这是整机最高风险模式
+sudo bash ./start-all.sh --workspace /srv/luna-workspace --execution-profile host-root
+```
+
+`user` 在 Linux 上拒绝以 UID 0 启动，防止普通档位意外变成 root；`container-root` 与 `host-root` 会验证实际 UID 和容器边界，不允许只靠配置名称伪装权限。执行档位只能通过本机环境或启动参数设置，网页 Agent 和 Dashboard 均不能远程升级。
+
+开放档位后，Agent 可调用 `system.execute` 运行一个 `program + args[]`。它不会隐式启用 `shell=true`，但运行 `bash -c` 本身仍等价于显式 shell，因此本地审批页会展示完整命令。`system.execute` 是强制逐次审批动作：即使全局审批关闭，也必须由本地 Dashboard 在超时前批准；不提供“始终允许”。审计保存程序名、参数数量、档位、UID、结果和命令 SHA-256，不持久化完整参数正文。
+
+> [!WARNING]
+> `host-root` 允许远程 Agent 在一次次本地批准后控制整台宿主机。只应在你独占并能观察 Dashboard 的服务器上启用。多租户云 Workspace 应使用非 privileged 容器，不挂载 Docker socket 或宿主机目录，再选择 `container-root`。
+
 然后在 ChatGPT 中开启 Developer mode，创建 Tunnel 类型的插件，选择刚创建的 Tunnel。首次对话建议先说：
 
 ```text
@@ -135,6 +159,9 @@ Windows：
 # 不自动打开 Dashboard
 .\start-all.ps1 -Workspace "C:\luna-workspaces\my-project" -NoBrowser
 
+# 可选：继承启动 Luna 的 Windows 普通用户权限；系统命令仍逐次审批
+.\start-all.ps1 -Workspace "C:\luna-workspaces\my-project" -ExecutionProfile user
+
 # 停止 MCP 和 Tunnel
 .\stop-all.ps1
 ```
@@ -144,6 +171,9 @@ Linux：
 ```bash
 # 默认无浏览器，适合无桌面的服务器；重复运行会安全重启同一实例
 bash ./start-all.sh --workspace "$HOME/luna-workspaces/my-project"
+
+# 可选：显式开放当前普通用户权限或 root 档位
+bash ./start-all.sh --workspace "$HOME/luna-workspaces/my-project" --execution-profile user
 
 # 桌面 Linux 可选择启动后打开 Dashboard
 bash ./start-all.sh --workspace "$HOME/luna-workspaces/my-project" --open-browser
@@ -156,6 +186,7 @@ bash ./stop-all.sh
 
 ```bash
 bash ./start-server.sh --workspace "$HOME/luna-workspaces/my-project"
+bash ./start-server.sh --workspace /srv/luna-workspace --execution-profile host-root
 bash ./stop-server.sh
 ```
 
@@ -230,6 +261,8 @@ v0.6.5 增加独立的 `clone_repository`，用于把公开 `github.com` 仓库�
 
 v0.7.0 进行了破坏性的 Compact Domain Tool 重构，不保留旧平铺 Tool。MCP 公开目录从 23 个动作型工具收敛为 13 个领域工具；`workspace.read/write/manage`、`git.read/remote`、`checkpoint.read/write` 等通过严格的 operation Schema 路由到 26 个 Core Action。权限开关、审批队列和 audit 使用 Action id，因此聚合不会让 `git.status` 与 `git.clone`、读取与删除共享风险。Git status/diff/log 使用 typed 参数，Git 不能再通过通用项目命令入口传入；`artifact.import.file` 继续保持正式 Host `fileParams` 顶层路径。
 
+v0.8.0 增加第 14 个领域工具 `system.execute` 与第 27 个 Core Action。默认 `restricted` 仍禁用它；`user`、`container-root`、`host-root` 必须由本机启动参数显式选择，并验证实际运行身份。系统命令始终进入本地逐次审批，不受全局观察模式影响。
+
 ## 开发与验证
 
 ```powershell
@@ -244,7 +277,7 @@ npm run test:artifact
 npm run test:linux
 ```
 
-v0.7.0 已达到“可靠工程编辑闭环 + 紧凑领域工具面”里程碑。近期版本的可执行任务、优先级和验收标准见 [TODO.md](TODO.md)，长期架构原则见 [AGENT_CAPABILITIES_ROADMAP.md](AGENT_CAPABILITIES_ROADMAP.md)。
+v0.8.0 已达到“可靠工程编辑闭环 + 紧凑领域工具面 + 显式系统执行档位”里程碑。近期版本的可执行任务、优先级和验收标准见 [TODO.md](TODO.md)，长期架构原则见 [AGENT_CAPABILITIES_ROADMAP.md](AGENT_CAPABILITIES_ROADMAP.md)。
 
 ## 许可证
 

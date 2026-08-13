@@ -1,11 +1,21 @@
-function action(id, label, level, publicTool, operation, protectedAction = false) {
-  return Object.freeze({ id, name: id, label, level, publicTool, operation, protected: protectedAction });
+function action(id, label, level, publicTool, operation, protectedAction = false, mandatoryApproval = false) {
+  return Object.freeze({
+    id,
+    name: id,
+    label,
+    level,
+    publicTool,
+    operation,
+    protected: protectedAction,
+    mandatoryApproval
+  });
 }
 
 // Core actions stay fine-grained so permission, approval and audit decisions never
 // inherit the broader risk of an MCP domain tool. Adapters may group these actions.
 export const ACTION_DEFINITIONS = Object.freeze([
   action("system.capabilities", "能力发现", "read", "luna.capabilities", "get"),
+  action("system.execute", "执行系统命令", "system", "system.execute", "run", true, true),
 
   action("workspace.list", "浏览目录", "read", "workspace.read", "list"),
   action("workspace.stat", "检查路径版本", "read", "workspace.read", "stat"),

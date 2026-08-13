@@ -1,5 +1,7 @@
 param(
     [string]$Workspace = "",
+    [ValidateSet("restricted", "user", "container-root", "host-root")]
+    [string]$ExecutionProfile = "",
     [switch]$NoBrowser,
     [switch]$SkipInstall
 )
@@ -71,6 +73,10 @@ foreach ($entry in $configuration.GetEnumerator()) {
     if ($entry.Key -like "MCP_*" -or $entry.Key -like "LUNA_*") {
         [Environment]::SetEnvironmentVariable($entry.Key, $entry.Value, "Process")
     }
+}
+
+if (-not [string]::IsNullOrWhiteSpace($ExecutionProfile)) {
+    [Environment]::SetEnvironmentVariable("LUNA_EXECUTION_PROFILE", $ExecutionProfile, "Process")
 }
 
 if (-not [string]::IsNullOrWhiteSpace($Workspace)) {

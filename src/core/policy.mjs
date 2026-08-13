@@ -4,12 +4,18 @@ export const PROTECTED_ACTIONS = Object.freeze(
   ACTION_DEFINITIONS.filter((definition) => definition.protected).map((definition) => definition.id)
 );
 
+export const MANDATORY_APPROVAL_ACTIONS = Object.freeze(
+  ACTION_DEFINITIONS.filter((definition) => definition.mandatoryApproval).map((definition) => definition.id)
+);
+
 export class PolicyService {
-  constructor({ approvalTimeoutSeconds = 120 } = {}) {
-    this.actionPermissions = Object.fromEntries(ACTION_DEFINITIONS.map(({ id }) => [id, true]));
+  constructor({ approvalTimeoutSeconds = 120, disabledActions = [] } = {}) {
+    const disabled = new Set(disabledActions);
+    this.actionPermissions = Object.fromEntries(ACTION_DEFINITIONS.map(({ id }) => [id, !disabled.has(id)]));
     this.approvalEnabled = false;
     this.approvalTimeoutSeconds = approvalTimeoutSeconds;
     this.protectedActions = new Set(PROTECTED_ACTIONS);
+    this.mandatoryApprovalActions = new Set(MANDATORY_APPROVAL_ACTIONS);
     this.version = 1;
     this.revision = 0;
   }
@@ -35,7 +41,8 @@ export class PolicyService {
   }
 
   requiresApproval(action) {
-    return this.approvalEnabled && this.protectedActions.has(action);
+    return this.mandatoryApprovalActions.has(action)
+      || (this.approvalEnabled && this.protectedActions.has(action));
   }
 
   actionRows() {
@@ -52,6 +59,7 @@ export class PolicyService {
       approvalEnabled: this.approvalEnabled,
       approvalTimeoutSeconds: this.approvalTimeoutSeconds,
       protectedActions: [...this.protectedActions],
+      mandatoryApprovalActions: [...this.mandatoryApprovalActions],
       actions: { ...this.actionPermissions }
     };
   }
