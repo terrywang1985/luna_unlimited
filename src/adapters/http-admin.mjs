@@ -25,7 +25,7 @@ export function registerAdminRoutes(app, { core, adminPagePath, logsDir, host, p
       server: {
         ready: true,
         name: "luna-unlimited",
-        version: "0.8.0",
+        version: "0.8.1",
         endpoint: `http://${host}:${port}/mcp`,
         adminUrl: `http://${host}:${port}/admin`,
         startedAt: startedAt.toISOString(),

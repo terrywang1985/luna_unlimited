@@ -247,7 +247,7 @@ bash ./start-all.sh --workspace /workspace --execution-profile container-root
 sudo bash ./start-all.sh --workspace /srv/luna-workspace --execution-profile host-root
 ```
 
-`user` 在 Linux 上拒绝 UID 0；两个 root 档位会分别验证 UID 0 和容器/宿主机环境。远端 Agent 与 Dashboard 都不能升级执行档位。每次 `system.execute` 均强制在本地 Dashboard 逐次审批，即使全局审批为观察模式也不会自动运行。多租户产品只应在非 privileged、无 Docker socket、无宿主机目录挂载的隔离容器中启用 `container-root`。
+`user` 在 Linux 上拒绝 UID 0；两个 root 档位会分别验证 UID 0 和容器/宿主机环境。远端 Agent 与 Dashboard 都不能升级执行档位。默认 `LUNA_SYSTEM_APPROVAL_MODE=host`：`system.execute` 由 ChatGPT/Host 页面确认后直接执行，不再要求终端或 Dashboard 二次批准。需要双重审批时，在 `.env` 设置 `LUNA_SYSTEM_APPROVAL_MODE=host-and-local`。多租户产品只应在非 privileged、无 Docker socket、无宿主机目录挂载的隔离容器中启用 `container-root`。
 
 Linux 服务器不需要公网 IP，也不要把 `MCP_PORT` 暴露到公网。MCP 与 Dashboard 继续仅监听 `127.0.0.1`；Tunnel 只需要访问 OpenAI `443` 的出站网络。若要从自己的电脑观察远程 Dashboard，可使用 SSH 端口转发：
 

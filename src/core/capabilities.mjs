@@ -17,7 +17,7 @@ export function buildCapabilities({ workspace, policy, limits, execution, adapte
   ]));
 
   return {
-    server: { name: "luna-unlimited", version: "0.8.0" },
+    server: { name: "luna-unlimited", version: "0.8.1" },
     protocol: { adapter, version: protocolVersion },
     workspace: { rootName: path.basename(workspace.root), writable: true },
     features: {
@@ -65,7 +65,9 @@ export function buildCapabilities({ workspace, policy, limits, execution, adapte
       effectiveUid: execution.uid,
       container: execution.container,
       root: execution.root,
-      requiresLocalApproval: true
+      approvalMode: execution.approvalMode,
+      requiresHostApproval: execution.profile !== "restricted",
+      requiresLocalApproval: execution.approvalMode === "host-and-local"
     },
     policy: {
       version: snapshot.version,

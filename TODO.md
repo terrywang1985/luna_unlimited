@@ -1,6 +1,6 @@
 # Luna Unlimited · 后续迭代 TODO
 
-> 基线版本：v0.8.0（2026-08-13）
+> 基线版本：v0.8.1（2026-08-13）
 >
 > 当前里程碑：**可靠工程编辑闭环**。任意兼容 Host 已能在单个授权 workspace 内完成 capability discovery、代码读取与搜索、带 revision 的原子修改、依赖安装、构建/测试、checkpoint/restore，以及 Artifact 双向传输。这个基线已经能够支持人工发起、Agent 持续调用工具的中等规模工程开发。
 
@@ -16,7 +16,8 @@
 - [x] v0.6.4：正式 Host `fileParams` 导入链路、DNS pinning 与 Node 22 HTTPS 兼容。
 - [x] v0.6.5：受限公开 GitHub `clone_repository`，包含无凭据 HTTPS、DNS/Host 策略、临时目录校验、大小限制、原子提交、审批和审计。
 - [x] v0.7.0：破坏性 Compact Domain Tool 重构。公开 MCP Tool 从 23 个收敛为 13 个，旧平铺 Tool 全部删除；26 个细粒度 Core Action 独立承载 permission、approval、risk 和 audit；多操作 Schema 通过 `request.oneOf` 对 Host 可见。
-- [x] v0.8.0：新增显式 `restricted / user / container-root / host-root` 执行档位与 `system.execute`。restricted 不能被 Dashboard 绕过；root 档位验证 Linux UID/容器边界；系统命令始终强制本地逐次审批，审计仅保存命令 hash 和脱敏元数据。
+- [x] v0.8.0：新增显式 `restricted / user / container-root / host-root` 执行档位与 `system.execute`。restricted 不能被 Dashboard 绕过；root 档位验证 Linux UID/容器边界；审计仅保存命令 hash 和脱敏元数据。
+- [x] v0.8.1：系统执行默认采用 Host/ChatGPT 页面确认，取消重复的 Linux 本地审批；保留显式 `host-and-local` 双审批模式。
 
 ## v0.8.x · 持久安全策略与项目任务
 

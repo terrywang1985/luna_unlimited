@@ -3,7 +3,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 
 const baseUrl = process.env.MCP_TEST_BASE_URL || "http://127.0.0.1:18765";
 const endpoint = new URL(process.env.MCP_TEST_URL || `${baseUrl}/mcp`);
-const client = new Client({ name: "luna-v080-contract", version: "0.8.0" });
+const client = new Client({ name: "luna-v081-contract", version: "0.8.1" });
 const transport = new StreamableHTTPClientTransport(endpoint);
 
 const expectedTools = [
@@ -112,8 +112,8 @@ try {
 
   const capabilitiesResult = await client.callTool({ name: "luna.capabilities", arguments: {} });
   const capabilities = capabilitiesResult.structuredContent;
-  if (capabilities?.server?.version !== "0.8.0" || Object.keys(capabilities.tools || {}).length !== 14) {
-    throw new Error("Capability catalog did not describe the v0.8 compact tools");
+  if (capabilities?.server?.version !== "0.8.1" || Object.keys(capabilities.tools || {}).length !== 14) {
+    throw new Error("Capability catalog did not describe the v0.8.1 compact tools");
   }
   if (!capabilities.actions?.["workspace.write_text"] || capabilities.workspace?.rootName?.includes(":\\")) {
     throw new Error("Capability action summary is incomplete or leaked an absolute workspace path");
@@ -255,7 +255,7 @@ try {
   await decideApproval(denial.id, "deny");
   if (!(await deniedCall).isError) throw new Error("Denied action must return an MCP error");
 
-  console.log("PASS: v0.8 exposes exactly 14 compact domain tools and no legacy flat tools");
+  console.log("PASS: v0.8.1 exposes exactly 14 compact domain tools and no legacy flat tools");
   console.log("PASS: nested oneOf operation schemas are visible through tools/list");
   console.log("PASS: read/write/search/Git behavior remains available through domain operations");
   console.log("PASS: action-level permission, approval, audit and path safety remain enforced");

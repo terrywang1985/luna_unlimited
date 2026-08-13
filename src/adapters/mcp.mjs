@@ -55,10 +55,10 @@ function gitLogArgs(input) {
 
 function createMcpServer(core, context) {
   const server = new McpServer(
-    { name: "luna-unlimited", version: "0.8.0" },
+    { name: "luna-unlimited", version: "0.8.1" },
     {
       instructions:
-        "Call luna.capabilities first. Tools are grouped by domain; select the operation field inside each domain tool. Use workspace.read(stat) before changing an existing file, code.patch for revision-protected code edits, artifact tools for binary files, and checkpoint.write(create) before risky refactors. system.execute is available only when the local owner explicitly selects an execution profile and every call requires local Dashboard approval."
+        "Call luna.capabilities first. Tools are grouped by domain; select the operation field inside each domain tool. Use workspace.read(stat) before changing an existing file, code.patch for revision-protected code edits, artifact tools for binary files, and checkpoint.write(create) before risky refactors. system.execute is available only when the local owner explicitly selects an execution profile; it is destructive and requires Host confirmation, with optional additional local Dashboard approval."
     }
   );
 
@@ -97,7 +97,7 @@ function createMcpServer(core, context) {
     "system.execute",
     {
       title: "Execute a locally approved system command",
-      description: "Run one program with typed arguments under the locally selected user/container-root/host-root profile. Every call pauses for one-time approval in the local Luna Dashboard; shell parsing is never implicit.",
+      description: "Run one program with typed arguments under the locally selected user/container-root/host-root profile. This destructive tool requires Host confirmation; optional host-and-local mode adds a second Dashboard approval. Shell parsing is never implicit.",
       inputSchema: {
         operation: z.literal("run").default("run"),
         program: z.string().min(1).max(300),
@@ -114,7 +114,7 @@ function createMcpServer(core, context) {
         args,
         cwd,
         timeoutSeconds: timeout_seconds
-      }, context, `SYSTEM COMMAND [${core.execution.profile}]\n${display}\ncwd: ${cwd}\nOne-time local approval required.`);
+      }, context, `SYSTEM COMMAND [${core.execution.profile}]\n${display}\ncwd: ${cwd}\nApproval mode: ${core.execution.approvalMode}.`);
     }
   );
 

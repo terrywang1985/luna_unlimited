@@ -342,6 +342,7 @@
         <div class="policy-row"><dt>绝对路径</dt><dd>${data.policy.absolutePaths ? "允许" : "拒绝"}</dd></div>
         <div class="policy-row"><dt>符号链接</dt><dd>${data.policy.symbolicLinks ? "允许" : "拒绝"}</dd></div>
         <div class="policy-row"><dt>执行档位</dt><dd>${escapeHtml(data.policy.executionProfile)} · UID ${escapeHtml(data.policy.effectiveUid ?? "n/a")} · ${data.policy.containerRuntime ? "容器" : "宿主机"}</dd></div>
+        <div class="policy-row"><dt>系统审批</dt><dd>${data.policy.systemApprovalMode === "host-and-local" ? "Host 弹窗 + 本地 Dashboard" : "Host / ChatGPT 页面确认"}</dd></div>
         <div class="policy-row"><dt>强制审批</dt><dd>${escapeHtml((data.policy.mandatoryApprovalActions || []).join(", ") || "无")}</dd></div>
         <div class="policy-row"><dt>恢复后端</dt><dd>${escapeHtml(data.policy.checkpointBackend)}</dd></div>
         <div class="policy-row"><dt>恢复点上限</dt><dd>${escapeHtml(data.policy.maxCheckpoints)} 个 · 单点 ${formatBytes(data.policy.maxCheckpointBytes)}</dd></div>

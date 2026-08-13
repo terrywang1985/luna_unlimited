@@ -34,8 +34,12 @@ export class LunaCore {
     maxOperationEntries = 10000,
     maxAuditEntries = 500,
     executionProfile = "restricted",
+    systemApprovalMode = "host",
     runtimeIdentity = { platform: process.platform, uid: null, container: false, root: false }
   }) {
+    if (!["host", "host-and-local"].includes(systemApprovalMode)) {
+      throw new Error("systemApprovalMode must be host or host-and-local");
+    }
     this.workspace = new WorkspaceService(workspaceRoot);
     this.limits = {
       maxFileBytes,
@@ -48,9 +52,10 @@ export class LunaCore {
       maxOperationEntries,
       executionProfile
     };
-    this.execution = { profile: executionProfile, ...runtimeIdentity };
+    this.execution = { profile: executionProfile, approvalMode: systemApprovalMode, ...runtimeIdentity };
     this.policy = new PolicyService({
-      disabledActions: executionProfile === "restricted" ? ["system.execute"] : []
+      disabledActions: executionProfile === "restricted" ? ["system.execute"] : [],
+      mandatoryApprovalActions: systemApprovalMode === "host-and-local" ? ["system.execute"] : []
     });
     this.approvals = new ApprovalManager({ policy: this.policy });
     this.audit = new AuditStore({ auditLogPath: path.join(logsDir, "audit.jsonl"), maxEntries: maxAuditEntries });
@@ -311,6 +316,7 @@ export class LunaCore {
         protectedActions: policy.protectedActions,
         mandatoryApprovalActions: policy.mandatoryApprovalActions,
         executionProfile: this.execution.profile,
+        systemApprovalMode: this.execution.approvalMode,
         effectiveUid: this.execution.uid,
         containerRuntime: this.execution.container,
         checkpointBackend: this.checkpoints.backend,

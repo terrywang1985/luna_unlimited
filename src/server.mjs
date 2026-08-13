@@ -21,6 +21,7 @@ const maxCheckpoints = Number.parseInt(process.env.MCP_MAX_CHECKPOINTS || "20", 
 const maxArtifactBytes = Number.parseInt(process.env.MCP_MAX_ARTIFACT_BYTES || String(25 * 1024 * 1024), 10);
 const maxOperationEntries = Number.parseInt(process.env.MCP_MAX_OPERATION_ENTRIES || "10000", 10);
 const executionProfile = process.env.LUNA_EXECUTION_PROFILE || "restricted";
+const systemApprovalMode = process.env.LUNA_SYSTEM_APPROVAL_MODE || "host";
 const defaultStateDir = process.platform === "win32"
   ? path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local"), "LunaUnlimited")
   : path.join(process.env.XDG_STATE_HOME || path.join(os.homedir(), ".local", "state"), "luna-unlimited");
@@ -30,6 +31,9 @@ const logsDir = path.join(projectDir, "logs");
 const adminPagePath = path.join(projectDir, "public", "admin.html");
 const startedAt = new Date();
 const runtimeIdentity = await SystemCommandService.inspectRuntime(executionProfile);
+if (!["host", "host-and-local"].includes(systemApprovalMode)) {
+  throw new Error("LUNA_SYSTEM_APPROVAL_MODE must be host or host-and-local");
+}
 
 if (!Number.isInteger(port) || port < 1 || port > 65535) {
   throw new Error("MCP_PORT must be an integer between 1 and 65535");
@@ -72,6 +76,7 @@ const core = await createLunaCore({
   maxArtifactBytes,
   maxOperationEntries,
   executionProfile,
+  systemApprovalMode,
   runtimeIdentity
 });
 const app = createMcpApp({ host, core });
@@ -86,6 +91,7 @@ const httpServer = app.listen(port, host, (error) => {
   console.log(`Luna Unlimited MCP listening at http://${host}:${port}/mcp`);
   console.log(`Workspace: ${workspaceRoot}`);
   console.log(`Execution profile: ${executionProfile} (uid=${runtimeIdentity.uid ?? "n/a"}, container=${runtimeIdentity.container})`);
+  console.log(`System approval mode: ${systemApprovalMode}`);
 });
 
 async function shutdown() {

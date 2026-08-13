@@ -9,13 +9,16 @@ export const MANDATORY_APPROVAL_ACTIONS = Object.freeze(
 );
 
 export class PolicyService {
-  constructor({ approvalTimeoutSeconds = 120, disabledActions = [] } = {}) {
+  constructor({ approvalTimeoutSeconds = 120, disabledActions = [], mandatoryApprovalActions = [] } = {}) {
     const disabled = new Set(disabledActions);
     this.actionPermissions = Object.fromEntries(ACTION_DEFINITIONS.map(({ id }) => [id, !disabled.has(id)]));
     this.approvalEnabled = false;
     this.approvalTimeoutSeconds = approvalTimeoutSeconds;
     this.protectedActions = new Set(PROTECTED_ACTIONS);
-    this.mandatoryApprovalActions = new Set(MANDATORY_APPROVAL_ACTIONS);
+    const supportedMandatoryActions = new Set(MANDATORY_APPROVAL_ACTIONS);
+    this.mandatoryApprovalActions = new Set(
+      mandatoryApprovalActions.filter((action) => supportedMandatoryActions.has(action))
+    );
     this.version = 1;
     this.revision = 0;
   }

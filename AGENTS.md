@@ -72,7 +72,7 @@ project.dependencies
 7. audit event 使用真实 Action id；
 8. Git 参数不允许从 `project.execute` 绕过 typed Git operation。
 
-当前 v0.8.0 已完成 Action Registry / Compact Domain Tool Surface 和显式系统/root 执行档位。下一阶段按 TODO 推进 policy persistence、project task 或 process manager，不重复实现既有 checkpoint、patch、Artifact Bridge、公开 GitHub Clone 和系统执行档位。
+当前 v0.8.1 已完成 Action Registry / Compact Domain Tool Surface、显式系统/root 执行档位，以及 Host 默认/本地可选的系统审批模式。下一阶段按 TODO 推进 policy persistence、project task 或 process manager，不重复实现既有 checkpoint、patch、Artifact Bridge、公开 GitHub Clone 和系统执行档位。
 
 ## 架构硬约束
 

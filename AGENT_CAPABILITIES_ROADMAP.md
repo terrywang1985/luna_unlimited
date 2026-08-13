@@ -18,7 +18,7 @@
 >
 > 核心原则：**协议可换，模型可换，Host 可换，本地能力和安全策略不换。**
 >
-> v0.8.0 之后的近期版本任务、优先级和完成标准统一维护在 [TODO.md](TODO.md)；本文继续作为长期架构与安全约束。
+> v0.8.1 之后的近期版本任务、优先级和完成标准统一维护在 [TODO.md](TODO.md)；本文继续作为长期架构与安全约束。
 
 ---
 
@@ -170,7 +170,7 @@ get_capabilities()
 {
   "server": {
     "name": "luna-unlimited",
-    "version": "0.8.0"
+    "version": "0.8.1"
   },
   "protocol": {
     "adapter": "mcp",
@@ -220,7 +220,7 @@ Agent 每次新连接都可以先探测能力，而不是依赖模型记忆。
 
 # 2. 当前能力
 
-当前 v0.8.0 对 Host 暴露 14 个 Compact Domain Tools，并由 27 个 Core Actions 承载细粒度安全语义。旧的 23 个平铺 Tool 已在项目尚无外部用户时一次性删除，不保留 legacy Adapter：
+当前 v0.8.1 对 Host 暴露 14 个 Compact Domain Tools，并由 27 个 Core Actions 承载细粒度安全语义。旧的 23 个平铺 Tool 已在项目尚无外部用户时一次性删除，不保留 legacy Adapter：
 
 ```text
 luna.capabilities
@@ -239,7 +239,7 @@ project.execute
 project.dependencies
 ```
 
-`system.execute` 只在本机所有者显式选择 `user`、`container-root` 或 `host-root` 执行档位时启用。该 Action 无条件要求本地逐次审批；全局观察模式不能绕过。root 档位必须验证 Linux effective UID，并区分容器 root 与宿主机 root。远端调用不能修改执行档位，restricted 也不能从 Dashboard 临时升级。
+`system.execute` 只在本机所有者显式选择 `user`、`container-root` 或 `host-root` 执行档位时启用。默认通过 MCP 风险 annotations 交给 Host/ChatGPT 页面确认；`host-and-local` 才额外要求 Dashboard 审批。root 档位必须验证 Linux effective UID，并区分容器 root 与宿主机 root。远端调用不能修改执行档位或审批来源，restricted 也不能从 Dashboard 临时升级。
 
 现有安全边界：
 
@@ -1110,7 +1110,7 @@ process.control    # start / stop
 
 完成标志：
 
-> 不修改 Core，仅增加 Adapter 就理论上能接入另一个 Agent Host。v0.8.0 的 Adapter contract 由 14 个 Compact Domain Tool 测试锁定。
+> 不修改 Core，仅增加 Adapter 就理论上能接入另一个 Agent Host。v0.8.1 的 Adapter contract 由 14 个 Compact Domain Tool 测试锁定。
 
 ---
 
