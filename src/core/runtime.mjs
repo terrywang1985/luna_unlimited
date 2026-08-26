@@ -11,6 +11,7 @@ import { auditContext, createWorkSessionContext } from "./context.mjs";
 import { CoreErrorCode, coreError, normalizeCoreError } from "./errors.mjs";
 import { FileService } from "./files.mjs";
 import { FileOperationsService } from "./file-operations.mjs";
+import { BrowserFileTransferService } from "./file-transfer.mjs";
 import { FileMutationQueue } from "./mutation-queue.mjs";
 import { PatchService } from "./patch.mjs";
 import { PolicyService } from "./policy.mjs";
@@ -71,6 +72,11 @@ export class LunaCore {
       workspace: this.workspace,
       mutations: this.mutations,
       maxOperationEntries
+    });
+    this.browserFiles = new BrowserFileTransferService({
+      workspace: this.workspace,
+      mutations: this.mutations,
+      maxBytes: maxArtifactBytes
     });
     this.artifacts = new ArtifactService({
       workspace: this.workspace,
@@ -258,6 +264,34 @@ export class LunaCore {
         status: "error",
         durationMs: Math.round(performance.now() - started),
         details: { error: error.message, errorCode: error.code },
+        context: auditContext(context)
+      });
+      return this.failure(error, audit);
+    }
+  }
+
+  async uploadBrowserFile({ path, buffer }, inputContext = {}) {
+    const started = performance.now();
+    const context = createWorkSessionContext(inputContext);
+    try {
+      const data = await this.browserFiles.upload({ path, buffer });
+      const audit = this.audit.record({
+        tool: "browser.file_upload",
+        path: data.structured?.path || path,
+        status: "success",
+        durationMs: Math.round(performance.now() - started),
+        details: data.details || {},
+        context: auditContext(context)
+      });
+      return { ok: true, data, meta: { durationMs: audit.durationMs, auditId: audit.id } };
+    } catch (rawError) {
+      const error = normalizeCoreError(rawError);
+      const audit = this.audit.record({
+        tool: "browser.file_upload",
+        path,
+        status: "error",
+        durationMs: Math.round(performance.now() - started),
+        details: { error: error.message, errorCode: error.code, ...error.details },
         context: auditContext(context)
       });
       return this.failure(error, audit);

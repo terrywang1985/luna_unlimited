@@ -3,6 +3,7 @@ import os from "node:os";
 import { fileURLToPath } from "node:url";
 
 import { registerAdminRoutes } from "./adapters/http-admin.mjs";
+import { registerFileTransferRoutes } from "./adapters/http-transfer.mjs";
 import { createMcpApp } from "./adapters/mcp.mjs";
 import { createLunaCore } from "./core/runtime.mjs";
 import { SystemCommandService } from "./core/system-commands.mjs";
@@ -80,6 +81,7 @@ const core = await createLunaCore({
   runtimeIdentity
 });
 const app = createMcpApp({ host, core });
+registerFileTransferRoutes(app, { core, maxUploadBytes: maxArtifactBytes });
 registerAdminRoutes(app, { core, adminPagePath, logsDir, host, port, startedAt });
 
 const httpServer = app.listen(port, host, (error) => {
