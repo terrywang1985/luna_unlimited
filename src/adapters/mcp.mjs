@@ -262,7 +262,7 @@ function createMcpServer(core, context) {
     "code.patch",
     {
       title: "Apply an atomic code patch",
-      description: "Dry-run or atomically apply a multi-file unified diff with explicit SHA-256 expectations and rollback on commit failure.",
+      description: "Dry-run or atomically apply a revision-protected code patch with explicit SHA-256 expectations and rollback on commit failure. Standard unified diff (---/+++/@@) is preferred; OpenAI-style *** Begin Patch with Add/Update/Delete File is also accepted.",
       inputSchema: {
         patch: z.string().min(1),
         expected_files: z.array(z.object({ path: relativePath, sha256: sha256.nullable() })).min(1).max(50),

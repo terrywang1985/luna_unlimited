@@ -76,6 +76,46 @@ try {
   await assert.rejects(content("beta.txt"), { code: "ENOENT" });
   assert.equal(await content("gamma.txt"), "created\nfile\n");
 
+  const compatAdd = `*** Begin Patch
+*** Add File: compat.txt
++one
++two
+*** End Patch
+`;
+  const compatAdded = await core.execute("code.apply_patch", {
+    patch: compatAdd,
+    expectedFiles: [expected("compat.txt", null)]
+  }, context);
+  assert.equal(compatAdded.ok, true, compatAdded.error?.message);
+  assert.equal(await content("compat.txt"), "one\ntwo\n");
+
+  const compatBefore = await content("compat.txt");
+  const compatUpdate = `*** Begin Patch
+*** Update File: compat.txt
+@@
+ one
+-two
++TWO
+*** End Patch
+`;
+  const compatUpdated = await core.execute("code.apply_patch", {
+    patch: compatUpdate,
+    expectedFiles: [expected("compat.txt", compatBefore)]
+  }, context);
+  assert.equal(compatUpdated.ok, true, compatUpdated.error?.message);
+  assert.equal(await content("compat.txt"), "one\nTWO\n");
+
+  const compatDelete = `*** Begin Patch
+*** Delete File: compat.txt
+*** End Patch
+`;
+  const compatDeleted = await core.execute("code.apply_patch", {
+    patch: compatDelete,
+    expectedFiles: [expected("compat.txt", await content("compat.txt"))]
+  }, context);
+  assert.equal(compatDeleted.ok, true, compatDeleted.error?.message);
+  await assert.rejects(content("compat.txt"), { code: "ENOENT" });
+
   const stableAlpha = await content("alpha.txt");
   const stableGamma = await content("gamma.txt");
   const stalePatch = `--- a/alpha.txt
@@ -175,6 +215,7 @@ try {
 
   console.log("PASS: unified diff dry-run validates without modifying files");
   console.log("PASS: create/update/delete patch commits atomically with SHA-256 expectations");
+  console.log("PASS: OpenAI-style *** Begin Patch Add/Update/Delete syntax is accepted safely");
   console.log("PASS: stale revisions, context mismatches, traversal, and sensitive paths fail before commit");
   console.log("PASS: injected commit failure restores every earlier file and records rollback audit state");
   console.log("PASS: CRLF files preserve line endings and unsupported no-newline patches fail closed");

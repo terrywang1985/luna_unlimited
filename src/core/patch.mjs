@@ -151,6 +151,135 @@ export function parseUnifiedDiff(rawPatch) {
   return files;
 }
 
+function applyPatchPath(line, prefix) {
+  const value = line.slice(prefix.length).trim();
+  if (!value || value.startsWith('"') || value.includes("\0")) {
+    throw validationError(CoreErrorCode.PATCH_UNSUPPORTED, "Quoted, empty, or NUL apply_patch paths are not supported");
+  }
+  return value;
+}
+
+function readApplyPatchHunk(lines, startIndex) {
+  const hunk = { lines: [] };
+  let index = startIndex;
+  while (index < lines.length) {
+    const line = lines[index];
+    if (line.startsWith("@@") || line.startsWith("*** Update File:") || line.startsWith("*** Add File:")
+      || line.startsWith("*** Delete File:") || line === "*** End Patch") break;
+    if (line === "" && index === lines.length - 1) break;
+    const kind = line[0];
+    if (![" ", "+", "-"].includes(kind)) {
+      throw validationError(CoreErrorCode.PATCH_INVALID, `apply_patch hunk lines must start with a space, +, or -: ${line}`);
+    }
+    hunk.lines.push({ kind, text: line.slice(1) });
+    index += 1;
+  }
+  if (!hunk.lines.length) throw validationError(CoreErrorCode.PATCH_INVALID, "apply_patch hunk is empty");
+  return { hunk, index };
+}
+
+export function parseApplyPatch(rawPatch) {
+  if (typeof rawPatch !== "string" || rawPatch.trim().length === 0) {
+    throw validationError(CoreErrorCode.PATCH_INVALID, "patch must be a non-empty string");
+  }
+  if (rawPatch.includes("\0")) throw validationError(CoreErrorCode.PATCH_INVALID, "patch contains a NUL byte");
+
+  const lines = rawPatch.replace(/\r\n/g, "\n").split("\n");
+  let index = 0;
+  while (index < lines.length && !lines[index]) index += 1;
+  if (lines[index] !== "*** Begin Patch") {
+    throw validationError(CoreErrorCode.PATCH_INVALID, "apply_patch input must begin with *** Begin Patch");
+  }
+  index += 1;
+  const files = [];
+  let ended = false;
+
+  while (index < lines.length) {
+    const line = lines[index];
+    if (!line) {
+      index += 1;
+      continue;
+    }
+    if (line === "*** End Patch") {
+      ended = true;
+      index += 1;
+      break;
+    }
+    if (line.startsWith("*** Move to:")) {
+      throw validationError(CoreErrorCode.PATCH_UNSUPPORTED, "Move/rename apply_patch operations are not supported");
+    }
+
+    let action;
+    let filePath;
+    if (line.startsWith("*** Update File:")) {
+      action = "updated";
+      filePath = applyPatchPath(line, "*** Update File:");
+    } else if (line.startsWith("*** Add File:")) {
+      action = "created";
+      filePath = applyPatchPath(line, "*** Add File:");
+    } else if (line.startsWith("*** Delete File:")) {
+      action = "deleted";
+      filePath = applyPatchPath(line, "*** Delete File:");
+    } else {
+      throw validationError(CoreErrorCode.PATCH_INVALID, `Expected apply_patch file header, found: ${line}`);
+    }
+    index += 1;
+
+    const entry = { path: filePath, action, hunks: [], dialect: "apply_patch" };
+    if (action === "deleted") {
+      while (index < lines.length && !lines[index].startsWith("*** ")) {
+        const current = lines[index];
+        if (current && current[0] !== "-") {
+          throw validationError(CoreErrorCode.PATCH_INVALID, "Delete File content must contain only - lines when present");
+        }
+        if (current) entry.hunks.push({ lines: [{ kind: "-", text: current.slice(1) }] });
+        index += 1;
+      }
+      files.push(entry);
+      continue;
+    }
+
+    if (action === "created") {
+      const hunk = { lines: [] };
+      while (index < lines.length && !lines[index].startsWith("*** ")) {
+        const current = lines[index];
+        if (current === "" && index === lines.length - 1) break;
+        if (!current.startsWith("+")) {
+          throw validationError(CoreErrorCode.PATCH_INVALID, "Add File content must use + lines");
+        }
+        hunk.lines.push({ kind: "+", text: current.slice(1) });
+        index += 1;
+      }
+      if (!hunk.lines.length) throw validationError(CoreErrorCode.PATCH_INVALID, `Add File has no content for ${filePath}`);
+      entry.hunks.push(hunk);
+      files.push(entry);
+      continue;
+    }
+
+    while (index < lines.length && !lines[index].startsWith("*** ")) {
+      if (lines[index].startsWith("@@")) index += 1;
+      const parsed = readApplyPatchHunk(lines, index);
+      entry.hunks.push(parsed.hunk);
+      index = parsed.index;
+    }
+    if (!entry.hunks.length) throw validationError(CoreErrorCode.PATCH_INVALID, `Update File has no hunks for ${filePath}`);
+    files.push(entry);
+  }
+
+  while (index < lines.length && !lines[index]) index += 1;
+  if (!ended || index !== lines.length) {
+    throw validationError(CoreErrorCode.PATCH_INVALID, "apply_patch input must end with *** End Patch");
+  }
+  if (files.length === 0 || files.length > MAX_PATCH_FILES) {
+    throw validationError(CoreErrorCode.PATCH_INVALID, `patch must touch between 1 and ${MAX_PATCH_FILES} files`);
+  }
+  return files;
+}
+
+function parsePatch(rawPatch) {
+  return rawPatch.trimStart().startsWith("*** Begin Patch") ? parseApplyPatch(rawPatch) : parseUnifiedDiff(rawPatch);
+}
+
 function splitText(content, relativePath) {
   if (content.includes("\0")) throw validationError(CoreErrorCode.BINARY_FILE, `Binary file is not supported: ${relativePath}`);
   if (content.length > 0 && !content.endsWith("\n")) {
@@ -164,7 +293,77 @@ function splitText(content, relativePath) {
   return { lines: normalized ? normalized.slice(0, -1).split("\n") : [], eol };
 }
 
+function applyContextHunks(file, originalContent) {
+  const { lines: originalLines, eol } = splitText(originalContent, file.path);
+  if (file.action === "created") {
+    const lines = file.hunks.flatMap((hunk) => hunk.lines.map((line) => line.text));
+    const content = lines.length ? `${lines.join(eol)}${eol}` : "";
+    return { content, addedLines: lines.length, removedLines: 0 };
+  }
+  if (file.action === "deleted") {
+    return { content: "", addedLines: 0, removedLines: originalLines.length };
+  }
+
+  const output = [];
+  let cursor = 0;
+  let addedLines = 0;
+  let removedLines = 0;
+
+  for (const hunk of file.hunks) {
+    const oldLines = hunk.lines.filter((line) => line.kind !== "+").map((line) => line.text);
+    if (!oldLines.length) {
+      throw validationError(
+        CoreErrorCode.PATCH_UNSUPPORTED,
+        `apply_patch update hunk needs at least one context or removed line: ${file.path}`
+      );
+    }
+
+    const matches = [];
+    for (let start = cursor; start + oldLines.length <= originalLines.length; start += 1) {
+      let matchesHere = true;
+      for (let offset = 0; offset < oldLines.length; offset += 1) {
+        if (originalLines[start + offset] !== oldLines[offset]) {
+          matchesHere = false;
+          break;
+        }
+      }
+      if (matchesHere) matches.push(start);
+    }
+    if (matches.length === 0) {
+      throw validationError(CoreErrorCode.PATCH_CONTEXT_MISMATCH, `apply_patch context does not match ${file.path}`, {
+        path: file.path
+      });
+    }
+    if (matches.length > 1) {
+      throw validationError(CoreErrorCode.PATCH_CONTEXT_MISMATCH, `apply_patch context is ambiguous in ${file.path}; include more context`, {
+        path: file.path,
+        matches: matches.length
+      });
+    }
+
+    const startIndex = matches[0];
+    output.push(...originalLines.slice(cursor, startIndex));
+    let sourceIndex = startIndex;
+    for (const line of hunk.lines) {
+      if (line.kind === "+") {
+        output.push(line.text);
+        addedLines += 1;
+        continue;
+      }
+      if (line.kind === " ") output.push(line.text);
+      else removedLines += 1;
+      sourceIndex += 1;
+    }
+    cursor = sourceIndex;
+  }
+
+  output.push(...originalLines.slice(cursor));
+  const content = output.length ? `${output.join(eol)}${eol}` : "";
+  return { content, addedLines, removedLines };
+}
+
 function applyHunks(file, originalContent) {
+  if (file.dialect === "apply_patch") return applyContextHunks(file, originalContent);
   const { lines: originalLines, eol } = splitText(originalContent, file.path);
   const output = [];
   let cursor = 0;
@@ -218,7 +417,7 @@ export class PatchService {
     if (Buffer.byteLength(patch || "", "utf8") > this.maxBatchBytes) {
       throw validationError(CoreErrorCode.FILE_TOO_LARGE, "patch exceeds the configured batch byte limit");
     }
-    const parsed = parseUnifiedDiff(patch);
+    const parsed = parsePatch(patch);
     if (!Array.isArray(expectedFiles) || expectedFiles.length < 1 || expectedFiles.length > MAX_PATCH_FILES) {
       throw validationError(
         CoreErrorCode.INVALID_ARGUMENT,
