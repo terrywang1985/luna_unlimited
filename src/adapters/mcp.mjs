@@ -54,11 +54,16 @@ function gitLogArgs(input) {
 }
 
 function createMcpServer(core, context) {
+  const executionRole = core.execution?.profile === "host-root"
+    ? "Execution role: Luna platform host/admin machine (commonly connected as luna-linux-new). Use it for Luna platform deployment, runtime, Docker, gateway, nginx and host-level maintenance. Do not treat it as the normal user project Workspace when a Workspace connector is available."
+    : core.execution?.profile === "container-root"
+      ? "Execution role: Luna user Workspace computer (commonly connected as luna-workspace-new). Use it for project files, coding, builds and tests. It is isolated from the platform host; host deployment or platform maintenance belongs on the host/admin connector."
+      : `Execution role: ${core.execution?.profile ?? "restricted"}. Inspect luna.capabilities before assuming host or Workspace privileges.`;
   const server = new McpServer(
     { name: "luna-unlimited", version: "0.8.1" },
     {
       instructions:
-        "Call luna.capabilities first. Tools are grouped by domain; select the operation field inside each domain tool. Use workspace.read(stat) before changing an existing file, code.patch for revision-protected code edits, artifact tools for binary files, and checkpoint.write(create) before risky refactors. system.execute is available only when the local owner explicitly selects an execution profile; it is destructive and requires Host confirmation, with optional additional local Dashboard approval."
+        executionRole + " Call luna.capabilities first in each new conversation so the current execution boundary and connected abilities are explicit. Tools are grouped by domain; select the operation field inside each domain tool. Use workspace.read(stat) before changing an existing file, code.patch for revision-protected code edits, artifact tools for binary files, and checkpoint.write(create) before risky refactors. system.execute is destructive and requires Host confirmation, with optional additional local Dashboard approval."
     }
   );
 
