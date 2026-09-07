@@ -8,6 +8,7 @@ import { buildCapabilities } from "./capabilities.mjs";
 import { CheckpointService } from "./checkpoints.mjs";
 import { CommandService } from "./commands.mjs";
 import { auditContext, createWorkSessionContext } from "./context.mjs";
+import { DesktopService } from "./desktop.mjs";
 import { CoreErrorCode, coreError, normalizeCoreError } from "./errors.mjs";
 import { FileService } from "./files.mjs";
 import { FileOperationsService } from "./file-operations.mjs";
@@ -36,6 +37,7 @@ export class LunaCore {
     maxAuditEntries = 500,
     executionProfile = "restricted",
     systemApprovalMode = "host",
+    desktopEnabled = false,
     runtimeIdentity = { platform: process.platform, uid: null, container: false, root: false }
   }) {
     if (!["host", "host-and-local"].includes(systemApprovalMode)) {
@@ -53,9 +55,17 @@ export class LunaCore {
       maxOperationEntries,
       executionProfile
     };
-    this.execution = { profile: executionProfile, approvalMode: systemApprovalMode, ...runtimeIdentity };
+    const effectiveDesktopEnabled = Boolean(desktopEnabled && runtimeIdentity.platform === "win32");
+    this.execution = { profile: executionProfile, approvalMode: systemApprovalMode, desktopEnabled: effectiveDesktopEnabled, ...runtimeIdentity };
+    const disabledActions = [
+      ...(executionProfile === "restricted" ? ["system.execute"] : []),
+      ...(!effectiveDesktopEnabled ? [
+        "desktop.windows", "desktop.screenshot", "desktop.focus", "desktop.move", "desktop.click",
+        "desktop.double_click", "desktop.drag", "desktop.scroll", "desktop.type", "desktop.key"
+      ] : [])
+    ];
     this.policy = new PolicyService({
-      disabledActions: executionProfile === "restricted" ? ["system.execute"] : [],
+      disabledActions,
       mandatoryApprovalActions: systemApprovalMode === "host-and-local" ? ["system.execute"] : []
     });
     this.approvals = new ApprovalManager({ policy: this.policy });
@@ -97,6 +107,10 @@ export class LunaCore {
       executionProfile,
       runtimeIdentity
     });
+    this.desktop = new DesktopService({
+      enabled: effectiveDesktopEnabled,
+      maxOutputBytes: Math.max(maxCommandOutputBytes, 10 * 1024 * 1024)
+    });
     this.repositories = new RepositoryService({
       workspace: this.workspace,
       mutations: this.mutations,
@@ -117,6 +131,16 @@ export class LunaCore {
     this.actionHandlers = {
       "system.capabilities": (request) => this.getCapabilities(request),
       "system.execute": (request) => this.systemCommands.execute(request),
+      "desktop.windows": (request) => this.desktop.execute(request),
+      "desktop.screenshot": (request) => this.desktop.execute(request),
+      "desktop.focus": (request) => this.desktop.execute(request),
+      "desktop.move": (request) => this.desktop.execute(request),
+      "desktop.click": (request) => this.desktop.execute(request),
+      "desktop.double_click": (request) => this.desktop.execute(request),
+      "desktop.drag": (request) => this.desktop.execute(request),
+      "desktop.scroll": (request) => this.desktop.execute(request),
+      "desktop.type": (request) => this.desktop.execute(request),
+      "desktop.key": (request) => this.desktop.execute(request),
       "workspace.list": (request) => this.files.listDirectory(request),
       "workspace.stat": (request) => this.files.statPath(request),
       "workspace.read_text": (request) => this.files.readTextFile(request),

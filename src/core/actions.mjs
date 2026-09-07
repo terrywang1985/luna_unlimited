@@ -17,6 +17,17 @@ export const ACTION_DEFINITIONS = Object.freeze([
   action("system.capabilities", "能力发现", "read", "luna.capabilities", "get"),
   action("system.execute", "执行系统命令", "system", "system.execute", "run", true, true),
 
+  action("desktop.windows", "查看桌面窗口", "read", "desktop.read", "windows"),
+  action("desktop.screenshot", "查看桌面截图", "read", "desktop.read", "screenshot", true),
+  action("desktop.focus", "聚焦桌面窗口", "desktop", "desktop.control", "focus", true),
+  action("desktop.move", "移动鼠标", "desktop", "desktop.control", "move", true),
+  action("desktop.click", "点击鼠标", "desktop", "desktop.control", "click", true),
+  action("desktop.double_click", "双击鼠标", "desktop", "desktop.control", "double_click", true),
+  action("desktop.drag", "拖拽鼠标", "desktop", "desktop.control", "drag", true),
+  action("desktop.scroll", "滚动鼠标", "desktop", "desktop.control", "scroll", true),
+  action("desktop.type", "桌面文本输入", "desktop", "desktop.control", "type", true),
+  action("desktop.key", "桌面按键", "desktop", "desktop.control", "key", true),
+
   action("workspace.list", "浏览目录", "read", "workspace.read", "list"),
   action("workspace.stat", "检查路径版本", "read", "workspace.read", "stat"),
   action("workspace.read_text", "读取文件", "read", "workspace.read", "text"),

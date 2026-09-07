@@ -2,6 +2,7 @@ param(
     [string]$Workspace = "",
     [ValidateSet("restricted", "user", "container-root", "host-root")]
     [string]$ExecutionProfile = "",
+    [switch]$EnableDesktop,
     [switch]$SkipInstall
 )
 
@@ -26,5 +27,8 @@ if (-not [string]::IsNullOrWhiteSpace($Workspace)) {
 }
 if (-not [string]::IsNullOrWhiteSpace($ExecutionProfile)) {
     [Environment]::SetEnvironmentVariable("LUNA_EXECUTION_PROFILE", $ExecutionProfile, "Process")
+}
+if ($EnableDesktop) {
+    [Environment]::SetEnvironmentVariable("LUNA_DESKTOP_ENABLED", "1", "Process")
 }
 npm start

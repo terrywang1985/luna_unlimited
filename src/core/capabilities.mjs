@@ -17,7 +17,7 @@ export function buildCapabilities({ workspace, policy, limits, execution, adapte
   ]));
 
   return {
-    server: { name: "luna-unlimited", version: "0.8.1" },
+    server: { name: "luna-unlimited", version: "0.8.2" },
     protocol: { adapter, version: protocolVersion },
     workspace: { rootName: path.basename(workspace.root), writable: true },
     features: {
@@ -29,6 +29,7 @@ export function buildCapabilities({ workspace, policy, limits, execution, adapte
       exec: true,
       systemExecution: execution.profile !== "restricted",
       rootExecution: execution.root && ["container-root", "host-root"].includes(execution.profile),
+      desktopControl: execution.desktopEnabled === true,
       dependencyInstall: true,
       publicRepositoryClone: true,
       commandProjectBoundary: true,
@@ -65,6 +66,7 @@ export function buildCapabilities({ workspace, policy, limits, execution, adapte
       effectiveUid: execution.uid,
       container: execution.container,
       root: execution.root,
+      desktopEnabled: execution.desktopEnabled === true,
       approvalMode: execution.approvalMode,
       requiresHostApproval: execution.profile !== "restricted",
       requiresLocalApproval: execution.approvalMode === "host-and-local"

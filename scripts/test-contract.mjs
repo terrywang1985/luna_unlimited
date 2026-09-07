@@ -3,7 +3,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 
 const baseUrl = process.env.MCP_TEST_BASE_URL || "http://127.0.0.1:18765";
 const endpoint = new URL(process.env.MCP_TEST_URL || `${baseUrl}/mcp`);
-const client = new Client({ name: "luna-v081-contract", version: "0.8.1" });
+const client = new Client({ name: "luna-v082-contract", version: "0.8.2" });
 const transport = new StreamableHTTPClientTransport(endpoint);
 
 const expectedTools = [
@@ -12,6 +12,8 @@ const expectedTools = [
   "checkpoint.read",
   "checkpoint.write",
   "code.patch",
+  "desktop.control",
+  "desktop.read",
   "git.read",
   "git.remote",
   "luna.capabilities",
@@ -24,6 +26,8 @@ const expectedTools = [
 ];
 
 const expectedOperations = {
+  "desktop.read": ["screenshot", "windows"],
+  "desktop.control": ["click", "double_click", "drag", "focus", "key", "move", "scroll", "type"],
   "workspace.read": ["list", "range", "search", "stat", "text"],
   "workspace.write": ["many", "mkdir", "replace", "text"],
   "workspace.manage": ["delete", "move"],
@@ -112,8 +116,8 @@ try {
 
   const capabilitiesResult = await client.callTool({ name: "luna.capabilities", arguments: {} });
   const capabilities = capabilitiesResult.structuredContent;
-  if (capabilities?.server?.version !== "0.8.1" || Object.keys(capabilities.tools || {}).length !== 14) {
-    throw new Error("Capability catalog did not describe the v0.8.1 compact tools");
+  if (capabilities?.server?.version !== "0.8.2" || Object.keys(capabilities.tools || {}).length !== 16) {
+    throw new Error("Capability catalog did not describe the v0.8.2 compact tools");
   }
   if (!capabilities.actions?.["workspace.write_text"] || capabilities.workspace?.rootName?.includes(":\\")) {
     throw new Error("Capability action summary is incomplete or leaked an absolute workspace path");
@@ -255,7 +259,7 @@ try {
   await decideApproval(denial.id, "deny");
   if (!(await deniedCall).isError) throw new Error("Denied action must return an MCP error");
 
-  console.log("PASS: v0.8.1 exposes exactly 14 compact domain tools and no legacy flat tools");
+  console.log("PASS: v0.8.2 exposes exactly 16 compact domain tools and no legacy flat tools");
   console.log("PASS: nested oneOf operation schemas are visible through tools/list");
   console.log("PASS: read/write/search/Git behavior remains available through domain operations");
   console.log("PASS: action-level permission, approval, audit and path safety remain enforced");

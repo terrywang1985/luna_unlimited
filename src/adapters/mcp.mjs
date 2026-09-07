@@ -60,7 +60,7 @@ function createMcpServer(core, context) {
       ? "Execution role: Luna user Workspace computer (commonly connected as luna-workspace-new). Use it for project files, coding, builds and tests. It is isolated from the platform host; host deployment or platform maintenance belongs on the host/admin connector."
       : `Execution role: ${core.execution?.profile ?? "restricted"}. Inspect luna.capabilities before assuming host or Workspace privileges.`;
   const server = new McpServer(
-    { name: "luna-unlimited", version: "0.8.1" },
+    { name: "luna-unlimited", version: "0.8.2" },
     {
       instructions:
         executionRole + " Call luna.capabilities first in each new conversation so the current execution boundary and connected abilities are explicit. Tools are grouped by domain; select the operation field inside each domain tool. Use workspace.read(stat) before changing an existing file, code.patch for revision-protected code edits, artifact tools for binary files, and checkpoint.write(create) before risky refactors. system.execute is destructive and requires Host confirmation, with optional additional local Dashboard approval."
@@ -96,6 +96,53 @@ function createMcpServer(core, context) {
       adapter: "mcp",
       protocolVersion: LATEST_PROTOCOL_VERSION
     }, context)
+  );
+
+  server.registerTool(
+    "desktop.read",
+    {
+      title: "Observe the local Windows desktop",
+      description: "List visible top-level Windows windows or capture a bounded JPEG screenshot. Desktop access must be explicitly enabled when Luna Unlimited starts.",
+      inputSchema: { request: z.discriminatedUnion("operation", [
+        z.object({ operation: z.literal("windows") }),
+        z.object({
+          operation: z.literal("screenshot"),
+          hwnd: z.string().regex(/^\d{1,20}$/).optional(),
+          max_width: z.number().int().min(640).max(2560).default(1600),
+          quality: z.number().int().min(40).max(90).default(70)
+        })
+      ]) },
+      annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false }
+    },
+    async ({ request }) => action(core, `desktop.${request.operation}`, request, context,
+      request.operation === "screenshot" ? "Capture the visible Windows desktop" : "List visible Windows desktop windows")
+  );
+
+  server.registerTool(
+    "desktop.control",
+    {
+      title: "Control the local Windows desktop",
+      description: "Focus a window and send bounded mouse or keyboard input to the current Windows user desktop. This does not bypass UAC or the Windows secure desktop.",
+      inputSchema: { request: z.discriminatedUnion("operation", [
+        z.object({ operation: z.literal("focus"), hwnd: z.string().regex(/^\d{1,20}$/) }),
+        z.object({ operation: z.literal("move"), x: z.number().int().min(-100000).max(100000), y: z.number().int().min(-100000).max(100000) }),
+        z.object({ operation: z.literal("click"), x: z.number().int().min(-100000).max(100000), y: z.number().int().min(-100000).max(100000), button: z.enum(["left", "right", "middle"]).default("left") }),
+        z.object({ operation: z.literal("double_click"), x: z.number().int().min(-100000).max(100000), y: z.number().int().min(-100000).max(100000), button: z.enum(["left", "right", "middle"]).default("left") }),
+        z.object({
+          operation: z.literal("drag"),
+          from_x: z.number().int().min(-100000).max(100000), from_y: z.number().int().min(-100000).max(100000),
+          to_x: z.number().int().min(-100000).max(100000), to_y: z.number().int().min(-100000).max(100000),
+          button: z.enum(["left", "right", "middle"]).default("left"),
+          duration_ms: z.number().int().min(50).max(5000).default(500)
+        }),
+        z.object({ operation: z.literal("scroll"), delta: z.number().int().min(-12000).max(12000), x: z.number().int().min(-100000).max(100000).optional(), y: z.number().int().min(-100000).max(100000).optional() }),
+        z.object({ operation: z.literal("type"), text: z.string().min(1).max(10000) }),
+        z.object({ operation: z.literal("key"), key: z.string().min(1).max(120).regex(/^[A-Za-z0-9+_-]+$/) })
+      ]) },
+      annotations: { readOnlyHint: false, openWorldHint: false, destructiveHint: true }
+    },
+    async ({ request }) => action(core, `desktop.${request.operation}`, request, context,
+      `Windows desktop input: ${request.operation}`)
   );
 
   server.registerTool(

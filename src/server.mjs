@@ -23,6 +23,7 @@ const maxArtifactBytes = Number.parseInt(process.env.MCP_MAX_ARTIFACT_BYTES || S
 const maxOperationEntries = Number.parseInt(process.env.MCP_MAX_OPERATION_ENTRIES || "10000", 10);
 const executionProfile = process.env.LUNA_EXECUTION_PROFILE || "restricted";
 const systemApprovalMode = process.env.LUNA_SYSTEM_APPROVAL_MODE || "host";
+const desktopEnabled = /^(1|true|yes|on)$/i.test(String(process.env.LUNA_DESKTOP_ENABLED || ""));
 const defaultStateDir = process.platform === "win32"
   ? path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local"), "LunaUnlimited")
   : path.join(process.env.XDG_STATE_HOME || path.join(os.homedir(), ".local", "state"), "luna-unlimited");
@@ -78,6 +79,7 @@ const core = await createLunaCore({
   maxOperationEntries,
   executionProfile,
   systemApprovalMode,
+  desktopEnabled,
   runtimeIdentity
 });
 const app = createMcpApp({ host, core });
@@ -94,6 +96,7 @@ const httpServer = app.listen(port, host, (error) => {
   console.log(`Workspace: ${workspaceRoot}`);
   console.log(`Execution profile: ${executionProfile} (uid=${runtimeIdentity.uid ?? "n/a"}, container=${runtimeIdentity.container})`);
   console.log(`System approval mode: ${systemApprovalMode}`);
+  console.log(`Desktop control: ${desktopEnabled && process.platform === "win32" ? "enabled" : "disabled"}`);
 });
 
 async function shutdown() {
