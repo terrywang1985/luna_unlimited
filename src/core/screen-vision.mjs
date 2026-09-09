@@ -70,7 +70,7 @@ async function fetchJson(url, init, timeoutMs) {
     let json = null;
     try { json = text ? JSON.parse(text) : null; } catch {}
     if (!response.ok) {
-      throw coreError(CoreErrorCode.PROCESS_FAILED, `Luna Eyes endpoint returned HTTP ${response.status}`, {
+      throw coreError(CoreErrorCode.PROCESS_FAILED, `Luna Eyes endpoint returned HTTP ${response.status}: ${text.slice(0, 500)}`, {
         status: response.status,
         body: text.slice(0, 1000)
       });
@@ -94,13 +94,12 @@ function runnerArgs(endpoint, { modelFile, mmprojFile, device, alias }) {
   return [
     "-m", modelFile,
     "--mmproj", mmprojFile,
-    "--no-mmproj-auto",
     "--mmproj-offload",
     "--device", device,
     "--alias", alias,
     "--host", url.hostname,
     "--port", url.port || "18880",
-    "-c", "2048",
+    "-c", "4096",
     "-ngl", "99",
     "--parallel", "1",
     "--cache-ram", "0"
