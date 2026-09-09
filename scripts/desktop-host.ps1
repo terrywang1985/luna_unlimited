@@ -188,6 +188,8 @@ function Capture-Screenshot($Payload) {
     $width = [Math]::Max(1, $rect.Right - $rect.Left)
     $height = [Math]::Max(1, $rect.Bottom - $rect.Top)
   }
+  $sourceWidth = $width
+  $sourceHeight = $height
   $bitmap = [Drawing.Bitmap]::new($width, $height)
   $graphics = [Drawing.Graphics]::FromImage($bitmap)
   try { $graphics.CopyFromScreen($left, $top, 0, 0, [Drawing.Size]::new($width, $height)) }
@@ -223,6 +225,8 @@ function Capture-Screenshot($Payload) {
       height = $height
       source_x = $left
       source_y = $top
+      source_width = $sourceWidth
+      source_height = $sourceHeight
       bytes = $bytes.Length
       data_url = 'data:image/jpeg;base64,' + [Convert]::ToBase64String($bytes)
     }

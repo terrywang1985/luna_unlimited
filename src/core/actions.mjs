@@ -27,6 +27,10 @@ export const ACTION_DEFINITIONS = Object.freeze([
   action("desktop.scroll", "滚动鼠标", "desktop", "desktop.control", "scroll", true),
   action("desktop.type", "桌面文本输入", "desktop", "desktop.control", "type", true),
   action("desktop.key", "桌面按键", "desktop", "desktop.control", "key", true),
+  action("desktop.vision_status", "检查 Luna Eyes 视觉定位服务", "read", "desktop.vision", "status"),
+  action("desktop.vision_find", "用 Luna Eyes 定位屏幕元素", "read", "desktop.vision", "find", true),
+  action("desktop.vision_click", "用 Luna Eyes 定位并点击屏幕元素", "desktop", "desktop.vision", "click", true),
+  action("desktop.vision_release", "释放 Luna Eyes 模型", "write", "desktop.vision", "release", true),
 
   action("browser_extension.status", "检查 Luna Browser 安装与升级状态", "read", "browser_extension.update", "status"),
   action("browser_extension.stage", "暂存 Luna Browser 升级包", "write", "browser_extension.update", "stage", true),

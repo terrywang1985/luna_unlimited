@@ -19,6 +19,7 @@ import { PatchService } from "./patch.mjs";
 import { PolicyService } from "./policy.mjs";
 import { RepositoryService } from "./repositories.mjs";
 import { SearchService } from "./search.mjs";
+import { ScreenVisionService } from "./screen-vision.mjs";
 import { SystemCommandService } from "./system-commands.mjs";
 import { WorkspaceService } from "./workspace.mjs";
 
@@ -62,7 +63,8 @@ export class LunaCore {
       ...(executionProfile === "restricted" ? ["system.execute"] : []),
       ...(!effectiveDesktopEnabled ? [
         "desktop.windows", "desktop.screenshot", "desktop.focus", "desktop.move", "desktop.click",
-        "desktop.double_click", "desktop.drag", "desktop.scroll", "desktop.type", "desktop.key"
+        "desktop.double_click", "desktop.drag", "desktop.scroll", "desktop.type", "desktop.key",
+        "desktop.vision_status", "desktop.vision_find", "desktop.vision_click", "desktop.vision_release"
       ] : [])
     ];
     this.policy = new PolicyService({
@@ -112,6 +114,7 @@ export class LunaCore {
       enabled: effectiveDesktopEnabled,
       maxOutputBytes: Math.max(maxCommandOutputBytes, 10 * 1024 * 1024)
     });
+    this.screenVision = new ScreenVisionService({ desktop: this.desktop });
     this.browserExtensionUpdates = new BrowserExtensionUpdateService({
       runtimeIdentity,
       maxPackageBytes: Math.min(maxArtifactBytes, 8 * 1024 * 1024)
@@ -146,6 +149,10 @@ export class LunaCore {
       "desktop.scroll": (request) => this.desktop.execute(request),
       "desktop.type": (request) => this.desktop.execute(request),
       "desktop.key": (request) => this.desktop.execute(request),
+      "desktop.vision_status": () => this.screenVision.status(),
+      "desktop.vision_find": (request) => this.screenVision.find(request),
+      "desktop.vision_click": (request) => this.screenVision.click(request),
+      "desktop.vision_release": () => this.screenVision.release(),
       "browser_extension.status": () => this.browserExtensionUpdates.status(),
       "browser_extension.stage": (request) => this.browserExtensionUpdates.stage(request),
       "browser_extension.activate": (request) => this.browserExtensionUpdates.activate(request),
