@@ -388,6 +388,49 @@ function createMcpServer(core, context) {
   );
 
   server.registerTool(
+    "workspace.download",
+    {
+      title: "Download a large HTTPS file into the workspace",
+      description: "Start, inspect, or cancel an asynchronous integrity-checked HTTPS download. start returns immediately with a download_id; the file is streamed to a temporary .part file, checked against the required byte size and SHA-256, then atomically moved into the workspace. This is intended for large model, asset, build, and package downloads without sending file bytes through MCP/WSS.",
+      inputSchema: { request: z.discriminatedUnion("operation", [
+        z.object({
+          operation: z.literal("start"),
+          url: z.string().url().max(4096),
+          destination: relativePath,
+          expected_sha256: sha256,
+          expected_bytes: z.number().int().positive().max(34359738368),
+          overwrite: z.boolean().default(false)
+        }),
+        z.object({
+          operation: z.literal("status"),
+          download_id: z.string().min(8).max(120).optional()
+        }),
+        z.object({
+          operation: z.literal("cancel"),
+          download_id: z.string().min(8).max(120)
+        })
+      ]) },
+      annotations: { readOnlyHint: false, openWorldHint: true, destructiveHint: false }
+    },
+    async ({ request: input }) => {
+      if (input.operation === "start") {
+        return action(core, "workspace.download_start", {
+          url: input.url,
+          destination: input.destination,
+          expectedSha256: input.expected_sha256,
+          expectedBytes: input.expected_bytes,
+          overwrite: input.overwrite
+        }, context, `Download ${input.expected_bytes} bytes to ${input.destination}`);
+      }
+      if (input.operation === "status") {
+        return action(core, "workspace.download_status", { downloadId: input.download_id || null }, context);
+      }
+      return action(core, "workspace.download_cancel", { downloadId: input.download_id }, context,
+        `Cancel download ${input.download_id}`);
+    }
+  );
+
+  server.registerTool(
     "code.patch",
     {
       title: "Apply an atomic code patch",

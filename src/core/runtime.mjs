@@ -9,6 +9,7 @@ import { CheckpointService } from "./checkpoints.mjs";
 import { CommandService } from "./commands.mjs";
 import { auditContext, createWorkSessionContext } from "./context.mjs";
 import { DesktopService } from "./desktop.mjs";
+import { DownloadService } from "./downloads.mjs";
 import { BrowserExtensionUpdateService } from "./browser-extension-updater.mjs";
 import { CoreErrorCode, coreError, normalizeCoreError } from "./errors.mjs";
 import { FileService } from "./files.mjs";
@@ -91,6 +92,7 @@ export class LunaCore {
       mutations: this.mutations,
       maxBytes: maxArtifactBytes
     });
+    this.downloads = new DownloadService({ workspace: this.workspace, mutations: this.mutations });
     this.artifacts = new ArtifactService({
       workspace: this.workspace,
       mutations: this.mutations,
@@ -169,6 +171,9 @@ export class LunaCore {
       "workspace.mkdir": (request) => this.fileOperations.createDirectory(request),
       "workspace.move": (request) => this.fileOperations.movePath(request),
       "workspace.delete": (request) => this.fileOperations.deletePath(request),
+      "workspace.download_start": (request) => this.downloads.start(request),
+      "workspace.download_status": (request) => this.downloads.status(request),
+      "workspace.download_cancel": (request) => this.downloads.cancel(request),
       "code.apply_patch": (request) => this.patch.apply(request),
       "artifact.inspect": (request) => this.artifacts.inspect(request),
       "artifact.import": (request) => this.artifacts.import(request),

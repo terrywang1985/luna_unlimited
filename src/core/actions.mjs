@@ -50,6 +50,9 @@ export const ACTION_DEFINITIONS = Object.freeze([
   action("workspace.mkdir", "创建目录", "write", "workspace.write", "mkdir", true),
   action("workspace.move", "移动路径", "write", "workspace.manage", "move", true),
   action("workspace.delete", "删除路径", "delete", "workspace.manage", "delete", true),
+  action("workspace.download_start", "启动后台下载", "network", "workspace.download", "start", true),
+  action("workspace.download_status", "查看后台下载", "read", "workspace.download", "status"),
+  action("workspace.download_cancel", "取消后台下载", "write", "workspace.download", "cancel", true),
 
   action("code.apply_patch", "原子应用补丁", "write", "code.patch", "apply", true),
 
