@@ -217,8 +217,9 @@ export class DownloadService {
       const structured = serializeJob(job);
       return { text: JSON.stringify(structured, null, 2), structured, details: structured };
     }
-    const structured = [...this.jobs.values()].slice(-20).reverse().map(serializeJob);
-    return { text: JSON.stringify(structured, null, 2), structured, details: { count: structured.length } };
+    const downloads = [...this.jobs.values()].slice(-20).reverse().map(serializeJob);
+    const structured = { downloads, count: downloads.length };
+    return { text: JSON.stringify(structured, null, 2), structured, details: { count: downloads.length } };
   }
 
   async cancel({ downloadId }) {
