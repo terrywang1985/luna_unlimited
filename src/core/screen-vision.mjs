@@ -1,10 +1,13 @@
 import { spawn } from "node:child_process";
+import { resolve } from "node:path";
 
 import { CoreErrorCode, coreError } from "./errors.mjs";
 
 const DEFAULT_ENDPOINT = "http://127.0.0.1:18880/v1/chat/completions";
 const DEFAULT_MODEL = "showui-2b";
-const DEFAULT_HF_MODEL = "localattention/ShowUI-2B-Q4_K_M-GGUF:Q4_K_M";
+const DEFAULT_MODEL_FILE = resolve("models", "showui-2b-q4_k_m.gguf");
+const DEFAULT_MMPROJ_FILE = resolve("models", "mmproj-qwen2vl-2b-q8_0.gguf");
+const DEFAULT_DEVICE = "Vulkan1";
 const DEFAULT_TIMEOUT_MS = 45000;
 const DEFAULT_START_TIMEOUT_MS = 180000;
 const DEFAULT_IDLE_MS = 120000;
@@ -86,14 +89,21 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function runnerArgs(endpoint, hfModel) {
+function runnerArgs(endpoint, { modelFile, mmprojFile, device, alias }) {
   const url = new URL(endpoint);
   return [
-    "-hf", hfModel,
+    "-m", modelFile,
+    "--mmproj", mmprojFile,
+    "--no-mmproj-auto",
+    "--mmproj-offload",
+    "--device", device,
+    "--alias", alias,
     "--host", url.hostname,
     "--port", url.port || "18880",
     "-c", "2048",
-    "-ngl", "99"
+    "-ngl", "99",
+    "--parallel", "1",
+    "--cache-ram", "0"
   ];
 }
 
@@ -106,8 +116,10 @@ export class ScreenVisionService {
     startTimeoutMs = DEFAULT_START_TIMEOUT_MS,
     idleMs = Number.parseInt(process.env.LUNA_EYES_IDLE_MS || String(DEFAULT_IDLE_MS), 10),
     managed = !/^(0|false|no|off)$/i.test(String(process.env.LUNA_EYES_MANAGED || "true")),
-    runner = process.env.LUNA_EYES_RUNNER || (process.platform === "win32" ? "llama-server.exe" : "llama-server"),
-    hfModel = process.env.LUNA_EYES_HF_MODEL || DEFAULT_HF_MODEL
+    runner = process.env.LUNA_EYES_RUNNER || (process.platform === "win32" ? resolve("bvk", "bin", "llama-server.exe") : "llama-server"),
+    modelFile = process.env.LUNA_EYES_MODEL_FILE || DEFAULT_MODEL_FILE,
+    mmprojFile = process.env.LUNA_EYES_MMPROJ_FILE || DEFAULT_MMPROJ_FILE,
+    device = process.env.LUNA_EYES_DEVICE || DEFAULT_DEVICE
   } = {}) {
     this.desktop = desktop;
     this.endpoint = String(endpoint || DEFAULT_ENDPOINT).trim();
@@ -117,7 +129,9 @@ export class ScreenVisionService {
     this.idleMs = Number.isInteger(idleMs) && idleMs >= 10000 ? idleMs : DEFAULT_IDLE_MS;
     this.managed = Boolean(managed);
     this.runner = String(runner || "").trim();
-    this.hfModel = String(hfModel || DEFAULT_HF_MODEL).trim();
+    this.modelFile = String(modelFile || DEFAULT_MODEL_FILE).trim();
+    this.mmprojFile = String(mmprojFile || DEFAULT_MMPROJ_FILE).trim();
+    this.device = String(device || DEFAULT_DEVICE).trim();
     this.child = null;
     this.starting = null;
     this.idleTimer = null;
@@ -139,6 +153,9 @@ export class ScreenVisionService {
         idle_ms: this.idleMs,
         endpoint: this.endpoint,
         model: this.model,
+        model_file: this.modelFile,
+        mmproj_file: this.mmprojFile,
+        device: this.device,
         models: Array.isArray(models?.data) ? models.data.map((item) => ({ id: item?.id, capabilities: item?.capabilities })).slice(0, 20) : []
       };
       return { text: JSON.stringify(structured, null, 2), structured, details: { available: true } };
@@ -151,6 +168,9 @@ export class ScreenVisionService {
         idle_ms: this.idleMs,
         endpoint: this.endpoint,
         model: this.model,
+        model_file: this.modelFile,
+        mmproj_file: this.mmprojFile,
+        device: this.device,
         error: error?.message || String(error)
       };
       return { text: JSON.stringify(structured, null, 2), structured, details: { available: false } };
@@ -182,7 +202,12 @@ export class ScreenVisionService {
 
     this.starting = (async () => {
       let spawnError = null;
-      const child = spawn(this.runner, runnerArgs(this.endpoint, this.hfModel), {
+      const child = spawn(this.runner, runnerArgs(this.endpoint, {
+        modelFile: this.modelFile,
+        mmprojFile: this.mmprojFile,
+        device: this.device,
+        alias: this.model
+      }), {
         windowsHide: true,
         stdio: "ignore",
         env: process.env
