@@ -28,6 +28,12 @@ export const ACTION_DEFINITIONS = Object.freeze([
   action("desktop.type", "桌面文本输入", "desktop", "desktop.control", "type", true),
   action("desktop.key", "桌面按键", "desktop", "desktop.control", "key", true),
 
+  action("browser_extension.status", "检查 Luna Browser 安装与升级状态", "read", "browser_extension.update", "status"),
+  action("browser_extension.stage", "暂存 Luna Browser 升级包", "write", "browser_extension.update", "stage", true),
+  action("browser_extension.activate", "激活 Luna Browser 升级", "system", "browser_extension.update", "activate", true),
+  action("browser_extension.confirm", "确认 Luna Browser 升级", "write", "browser_extension.update", "confirm", true),
+  action("browser_extension.rollback", "回滚 Luna Browser 升级", "system", "browser_extension.update", "rollback", true),
+
   action("workspace.list", "浏览目录", "read", "workspace.read", "list"),
   action("workspace.stat", "检查路径版本", "read", "workspace.read", "stat"),
   action("workspace.read_text", "读取文件", "read", "workspace.read", "text"),

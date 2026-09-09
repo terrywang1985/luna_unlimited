@@ -146,6 +146,48 @@ function createMcpServer(core, context) {
   );
 
   server.registerTool(
+    "browser_extension.update",
+    {
+      title: "Safely update the local Luna Browser extension",
+      description: "Discover the existing unpacked Luna Browser installation and stage, activate, confirm, or roll back a revisioned package. The updater only targets directories already registered by Chrome/Edge as Luna Browser; callers cannot provide arbitrary filesystem destinations.",
+      inputSchema: { request: z.discriminatedUnion("operation", [
+        z.object({ operation: z.literal("status") }),
+        z.object({
+          operation: z.literal("stage"),
+          package_base64: z.string().min(4).max(12 * 1024 * 1024),
+          expected_sha256: sha256,
+          version: z.string().regex(/^\d+(?:\.\d+){0,3}$/)
+        }),
+        z.object({
+          operation: z.literal("activate"),
+          version: z.string().regex(/^\d+(?:\.\d+){0,3}$/),
+          sha256,
+          extension_id: z.string().regex(/^[a-p]{32}$/).optional()
+        }),
+        z.object({ operation: z.literal("confirm"), version: z.string().regex(/^\d+(?:\.\d+){0,3}$/) }),
+        z.object({ operation: z.literal("rollback") })
+      ]) },
+      annotations: { readOnlyHint: false, openWorldHint: false, destructiveHint: true }
+    },
+    async ({ request: input }) => {
+      if (input.operation === "status") return action(core, "browser_extension.status", {}, context);
+      if (input.operation === "stage") return action(core, "browser_extension.stage", {
+        packageBase64: input.package_base64,
+        expectedSha256: input.expected_sha256,
+        version: input.version
+      }, context, `Stage Luna Browser ${input.version}`);
+      if (input.operation === "activate") return action(core, "browser_extension.activate", {
+        version: input.version,
+        sha256: input.sha256,
+        extensionId: input.extension_id || null
+      }, context, `Activate Luna Browser ${input.version} in the Chrome/Edge registered Luna Browser directory`);
+      if (input.operation === "confirm") return action(core, "browser_extension.confirm", { version: input.version }, context,
+        `Confirm Luna Browser ${input.version} is healthy after reconnect`);
+      return action(core, "browser_extension.rollback", {}, context, "Restore the previous Luna Browser package from the updater backup");
+    }
+  );
+
+  server.registerTool(
     "system.execute",
     {
       title: "Execute a locally approved system command",

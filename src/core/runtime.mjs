@@ -9,6 +9,7 @@ import { CheckpointService } from "./checkpoints.mjs";
 import { CommandService } from "./commands.mjs";
 import { auditContext, createWorkSessionContext } from "./context.mjs";
 import { DesktopService } from "./desktop.mjs";
+import { BrowserExtensionUpdateService } from "./browser-extension-updater.mjs";
 import { CoreErrorCode, coreError, normalizeCoreError } from "./errors.mjs";
 import { FileService } from "./files.mjs";
 import { FileOperationsService } from "./file-operations.mjs";
@@ -111,6 +112,10 @@ export class LunaCore {
       enabled: effectiveDesktopEnabled,
       maxOutputBytes: Math.max(maxCommandOutputBytes, 10 * 1024 * 1024)
     });
+    this.browserExtensionUpdates = new BrowserExtensionUpdateService({
+      runtimeIdentity,
+      maxPackageBytes: Math.min(maxArtifactBytes, 8 * 1024 * 1024)
+    });
     this.repositories = new RepositoryService({
       workspace: this.workspace,
       mutations: this.mutations,
@@ -141,6 +146,11 @@ export class LunaCore {
       "desktop.scroll": (request) => this.desktop.execute(request),
       "desktop.type": (request) => this.desktop.execute(request),
       "desktop.key": (request) => this.desktop.execute(request),
+      "browser_extension.status": () => this.browserExtensionUpdates.status(),
+      "browser_extension.stage": (request) => this.browserExtensionUpdates.stage(request),
+      "browser_extension.activate": (request) => this.browserExtensionUpdates.activate(request),
+      "browser_extension.confirm": (request) => this.browserExtensionUpdates.confirm(request),
+      "browser_extension.rollback": () => this.browserExtensionUpdates.rollback(),
       "workspace.list": (request) => this.files.listDirectory(request),
       "workspace.stat": (request) => this.files.statPath(request),
       "workspace.read_text": (request) => this.files.readTextFile(request),
