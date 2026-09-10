@@ -7,15 +7,14 @@ import { fileURLToPath } from "node:url";
 import { CoreErrorCode, coreError } from "./errors.mjs";
 
 const DEFAULT_ENDPOINT = "http://127.0.0.1:18880/v1/chat/completions";
-const DEFAULT_MODEL = "showui-2b";
-const DEFAULT_MODEL_FILE = resolve("models", "showui-2b-q4_k_m.gguf");
-const DEFAULT_MMPROJ_FILE = resolve("models", "mmproj-qwen2vl-2b-q8_0.gguf");
-const DEFAULT_DEVICE = "Vulkan1";
+const DEFAULT_MODEL = "locateanything-3b";
+const DEFAULT_MODEL_FILE = resolve("models", "LocateAnything-3B-Q4_K_M.gguf");
+const DEFAULT_MMPROJ_FILE = resolve("models", "mmproj-LocateAnything-3B-BF16.gguf");
+const DEFAULT_DEVICE = "CUDA0";
 const DEFAULT_TIMEOUT_MS = 45000;
 const DEFAULT_START_TIMEOUT_MS = 180000;
 const DEFAULT_IDLE_MS = 120000;
 const DEFAULT_OVERLAY_HELPER = resolve(dirname(fileURLToPath(import.meta.url)), "../../scripts/desktop-overlay.ps1");
-const GROUNDING_SYSTEM = "Based on the screenshot of the page, I give a text description and you give its corresponding location. The coordinate represents a clickable location [x, y] for an element, which is a relative coordinate on the screenshot, scaled from 0 to 1.";
 
 function invalid(message) {
   throw coreError(CoreErrorCode.INVALID_ARGUMENT, message);
@@ -42,15 +41,19 @@ function boundedInteger(value, name, fallback, min, max) {
 
 export function parseGroundingPoint(text) {
   const raw = String(text || "").trim();
-  const match = raw.match(/[\[(]\s*(-?(?:\d+(?:\.\d+)?|\.\d+))\s*,\s*(-?(?:\d+(?:\.\d+)?|\.\d+))\s*[\])]/);
+  const match = raw.match(/<box>((?:<\d+>)+)<\/box>/);
   if (!match) {
-    throw coreError(CoreErrorCode.PROCESS_FAILED, "Luna Eyes model did not return a [x, y] grounding point", { raw: raw.slice(0, 500) });
+    throw coreError(CoreErrorCode.PROCESS_FAILED, "LocateAnything did not return a grounding point or box", { raw: raw.slice(0, 500) });
   }
-  const x = Number.parseFloat(match[1]);
-  const y = Number.parseFloat(match[2]);
-  if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || x > 1 || y < 0 || y > 1) {
-    throw coreError(CoreErrorCode.PROCESS_FAILED, "Luna Eyes returned an out-of-range grounding point", { x, y, raw: raw.slice(0, 500) });
+  const coordinates = [...match[1].matchAll(/<(\d+)>/g)].map((item) => Number.parseInt(item[1], 10));
+  if (![2, 4].includes(coordinates.length) || coordinates.some((value) => !Number.isInteger(value) || value < 0 || value > 1000)) {
+    throw coreError(CoreErrorCode.PROCESS_FAILED, "LocateAnything returned malformed 0-1000 coordinates", {
+      coordinates,
+      raw: raw.slice(0, 500)
+    });
   }
+  const x = coordinates.length === 2 ? coordinates[0] / 1000 : ((coordinates[0] + coordinates[2]) / 2) / 1000;
+  const y = coordinates.length === 2 ? coordinates[1] / 1000 : ((coordinates[1] + coordinates[3]) / 2) / 1000;
   return { x, y };
 }
 
@@ -189,6 +192,7 @@ function runnerArgs(endpoint, { modelFile, mmprojFile, device, alias }) {
     "--mmproj-offload",
     "--device", device,
     "--alias", alias,
+    "--special",
     "--host", url.hostname,
     "--port", url.port || "18880",
     "-c", "4096",
@@ -207,7 +211,7 @@ export class ScreenVisionService {
     startTimeoutMs = DEFAULT_START_TIMEOUT_MS,
     idleMs = Number.parseInt(process.env.LUNA_EYES_IDLE_MS || String(DEFAULT_IDLE_MS), 10),
     managed = !/^(0|false|no|off)$/i.test(String(process.env.LUNA_EYES_MANAGED || "true")),
-    runner = process.env.LUNA_EYES_RUNNER || (process.platform === "win32" ? resolve("bvk", "bin", "llama-server.exe") : "llama-server"),
+    runner = process.env.LUNA_EYES_RUNNER || (process.platform === "win32" ? resolve("blc", "bin", "llama-server.exe") : "llama-server"),
     modelFile = process.env.LUNA_EYES_MODEL_FILE || DEFAULT_MODEL_FILE,
     mmprojFile = process.env.LUNA_EYES_MMPROJ_FILE || DEFAULT_MMPROJ_FILE,
     device = process.env.LUNA_EYES_DEVICE || DEFAULT_DEVICE,
@@ -376,13 +380,12 @@ export class ScreenVisionService {
       const payload = {
         model: this.model,
         temperature: 0,
-        max_tokens: 64,
+        max_tokens: 96,
         messages: [{
           role: "user",
           content: [
-            { type: "text", text: GROUNDING_SYSTEM },
             { type: "image_url", image_url: { url: image.data_url } },
-            { type: "text", text: query }
+            { type: "text", text: `Point to: ${query.replace(/[.。！？!?]+$/, "")}.` }
           ]
         }]
       };
