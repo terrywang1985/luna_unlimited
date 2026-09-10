@@ -7,6 +7,12 @@ assert.deepEqual(parseGroundingPoint("[0.25, 0.75]"), { x: 0.25, y: 0.75 });
 assert.deepEqual(parseGroundingPoint("(0.1,0.9)"), { x: 0.1, y: 0.9 });
 
 const calls = [];
+const overlayEvents = [];
+const overlay = {
+  show(mode, point = null) { overlayEvents.push({ type: "show", mode, point }); return true; },
+  hide() { overlayEvents.push({ type: "hide" }); },
+  status() { return { enabled: true, visible: false, mode: "hidden", helper: "test", error: null }; }
+};
 const desktop = {
   async execute(request) {
     calls.push(request);
@@ -50,14 +56,24 @@ const server = http.createServer(async (req, res) => {
 
 await new Promise((resolve) => server.listen(18889, "127.0.0.1", resolve));
 try {
-  const eyes = new ScreenVisionService({ desktop, endpoint: "http://127.0.0.1:18889/v1/chat/completions", model: "showui-2b" });
+  const eyes = new ScreenVisionService({ desktop, endpoint: "http://127.0.0.1:18889/v1/chat/completions", model: "showui-2b", overlay });
   const status = await eyes.status();
   assert.equal(status.structured.available, true);
+  assert.equal(status.structured.overlay.enabled, true);
   const found = await eyes.find({ query: "程序包", hwnd: "123" });
   assert.deepEqual(found.structured.screen, { x: 600, y: 800 });
+  assert.deepEqual(overlayEvents.splice(0), [
+    { type: "show", mode: "observe", point: null },
+    { type: "hide" }
+  ]);
   const clicked = await eyes.click({ query: "程序包", hwnd: "123" });
   assert.equal(clicked.structured.clicked, true);
   assert.deepEqual(calls.at(-1), { operation: "click", x: 600, y: 800, button: "left" });
+  assert.deepEqual(overlayEvents, [
+    { type: "show", mode: "observe", point: null },
+    { type: "show", mode: "control", point: { x: 600, y: 800 } },
+    { type: "hide" }
+  ]);
   console.log("screen vision core tests passed");
 } finally {
   server.close();

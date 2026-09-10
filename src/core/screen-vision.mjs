@@ -1,5 +1,8 @@
 import { spawn } from "node:child_process";
-import { resolve } from "node:path";
+import { rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { CoreErrorCode, coreError } from "./errors.mjs";
 
@@ -11,6 +14,7 @@ const DEFAULT_DEVICE = "Vulkan1";
 const DEFAULT_TIMEOUT_MS = 45000;
 const DEFAULT_START_TIMEOUT_MS = 180000;
 const DEFAULT_IDLE_MS = 120000;
+const DEFAULT_OVERLAY_HELPER = resolve(dirname(fileURLToPath(import.meta.url)), "../../scripts/desktop-overlay.ps1");
 const GROUNDING_SYSTEM = "Based on the screenshot of the page, I give a text description and you give its corresponding location. The coordinate represents a clickable location [x, y] for an element, which is a relative coordinate on the screenshot, scaled from 0 to 1.";
 
 function invalid(message) {
@@ -89,6 +93,93 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function enabledByEnvironment(name, fallback = true) {
+  const value = process.env[name];
+  if (value === undefined || value === null || value === "") return fallback;
+  return !/^(0|false|no|off)$/i.test(String(value));
+}
+
+export class ScreenVisionOverlay {
+  constructor({
+    enabled = process.platform === "win32" && enabledByEnvironment("LUNA_EYES_OVERLAY", true),
+    helperPath = process.env.LUNA_EYES_OVERLAY_HELPER || DEFAULT_OVERLAY_HELPER,
+    spawnProcess = spawn,
+    stateFile = join(tmpdir(), `luna-eyes-overlay-${process.pid}.json`)
+  } = {}) {
+    this.enabled = Boolean(enabled);
+    this.helperPath = helperPath;
+    this.spawnProcess = spawnProcess;
+    this.stateFile = stateFile;
+    this.child = null;
+    this.mode = "hidden";
+    this.lastError = null;
+  }
+
+  status() {
+    return {
+      enabled: this.enabled,
+      visible: Boolean(this.child && this.child.exitCode === null),
+      mode: this.mode,
+      helper: this.helperPath,
+      error: this.lastError
+    };
+  }
+
+  show(mode = "observe", point = null) {
+    if (!this.enabled) return false;
+    if (!["observe", "control"].includes(mode)) return false;
+    try {
+      const payload = {
+        mode,
+        point: point && Number.isFinite(point.x) && Number.isFinite(point.y)
+          ? { x: Math.round(point.x), y: Math.round(point.y) }
+          : null,
+        parent_pid: process.pid,
+        updated_at: Date.now()
+      };
+      writeFileSync(this.stateFile, JSON.stringify(payload), "utf8");
+      this.mode = mode;
+      this.lastError = null;
+      if (this.child && this.child.exitCode === null) return true;
+
+      const child = this.spawnProcess("powershell.exe", [
+        "-NoProfile",
+        "-NonInteractive",
+        "-STA",
+        "-ExecutionPolicy", "Bypass",
+        "-File", this.helperPath,
+        "-StateFile", this.stateFile,
+        "-ParentPid", String(process.pid)
+      ], {
+        windowsHide: true,
+        stdio: "ignore",
+        env: process.env
+      });
+      this.child = child;
+      child.once("error", (error) => {
+        this.lastError = error?.message || String(error);
+        if (this.child === child) this.child = null;
+      });
+      child.once("exit", () => {
+        if (this.child === child) this.child = null;
+      });
+      child.unref?.();
+      return true;
+    } catch (error) {
+      this.lastError = error?.message || String(error);
+      return false;
+    }
+  }
+
+  hide() {
+    this.mode = "hidden";
+    const child = this.child;
+    this.child = null;
+    try { child?.kill(); } catch {}
+    try { rmSync(this.stateFile, { force: true }); } catch {}
+  }
+}
+
 function runnerArgs(endpoint, { modelFile, mmprojFile, device, alias }) {
   const url = new URL(endpoint);
   return [
@@ -118,7 +209,8 @@ export class ScreenVisionService {
     runner = process.env.LUNA_EYES_RUNNER || (process.platform === "win32" ? resolve("bvk", "bin", "llama-server.exe") : "llama-server"),
     modelFile = process.env.LUNA_EYES_MODEL_FILE || DEFAULT_MODEL_FILE,
     mmprojFile = process.env.LUNA_EYES_MMPROJ_FILE || DEFAULT_MMPROJ_FILE,
-    device = process.env.LUNA_EYES_DEVICE || DEFAULT_DEVICE
+    device = process.env.LUNA_EYES_DEVICE || DEFAULT_DEVICE,
+    overlay = null
   } = {}) {
     this.desktop = desktop;
     this.endpoint = String(endpoint || DEFAULT_ENDPOINT).trim();
@@ -131,6 +223,7 @@ export class ScreenVisionService {
     this.modelFile = String(modelFile || DEFAULT_MODEL_FILE).trim();
     this.mmprojFile = String(mmprojFile || DEFAULT_MMPROJ_FILE).trim();
     this.device = String(device || DEFAULT_DEVICE).trim();
+    this.overlay = overlay || new ScreenVisionOverlay();
     this.child = null;
     this.starting = null;
     this.idleTimer = null;
@@ -155,6 +248,7 @@ export class ScreenVisionService {
         model_file: this.modelFile,
         mmproj_file: this.mmprojFile,
         device: this.device,
+        overlay: this.overlay.status(),
         models: Array.isArray(models?.data) ? models.data.map((item) => ({ id: item?.id, capabilities: item?.capabilities })).slice(0, 20) : []
       };
       return { text: JSON.stringify(structured, null, 2), structured, details: { available: true } };
@@ -170,6 +264,7 @@ export class ScreenVisionService {
         model_file: this.modelFile,
         mmproj_file: this.mmprojFile,
         device: this.device,
+        overlay: this.overlay.status(),
         error: error?.message || String(error)
       };
       return { text: JSON.stringify(structured, null, 2), structured, details: { available: false } };
@@ -260,7 +355,7 @@ export class ScreenVisionService {
     return { text: JSON.stringify(structured), structured, details: structured };
   }
 
-  async find(request = {}) {
+  async find(request = {}, { retainOverlay = false } = {}) {
     const query = normalizeQuery(request.query);
     const hwnd = optionalHwnd(request.hwnd);
     const maxWidth = boundedInteger(request.max_width, "max_width", 1344, 640, 2560);
@@ -274,66 +369,79 @@ export class ScreenVisionService {
       throw coreError(CoreErrorCode.PROCESS_FAILED, "Desktop screenshot did not include the data required for visual grounding");
     }
 
-    const payload = {
-      model: this.model,
-      temperature: 0,
-      max_tokens: 64,
-      messages: [{
-        role: "user",
-        content: [
-          { type: "text", text: GROUNDING_SYSTEM },
-          { type: "image_url", image_url: { url: image.data_url } },
-          { type: "text", text: query }
-        ]
-      }]
-    };
-    const response = await fetchJson(this.endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify(payload)
-    }, this.timeoutMs);
-    this.scheduleIdleRelease();
-    const raw = response?.choices?.[0]?.message?.content ?? response?.choices?.[0]?.text ?? "";
-    const normalized = parseGroundingPoint(raw);
-    const sourceWidth = Number.isFinite(image.source_width) ? image.source_width : image.width;
-    const sourceHeight = Number.isFinite(image.source_height) ? image.source_height : image.height;
-    const screen = {
-      x: Math.round(image.source_x + normalized.x * sourceWidth),
-      y: Math.round(image.source_y + normalized.y * sourceHeight)
-    };
-    const structured = {
-      query,
-      point: normalized,
-      screen,
-      capture: {
-        hwnd,
-        width: image.width,
-        height: image.height,
-        source_x: image.source_x,
-        source_y: image.source_y,
-        source_width: sourceWidth,
-        source_height: sourceHeight
-      },
-      model: this.model,
-      raw: String(raw).slice(0, 500)
-    };
-    return {
-      text: `${query} -> normalized [${normalized.x.toFixed(4)}, ${normalized.y.toFixed(4)}], screen (${screen.x}, ${screen.y})`,
-      structured,
-      details: { operation: "find", model: this.model, query }
-    };
+    let success = false;
+    this.overlay.show("observe");
+    try {
+      const payload = {
+        model: this.model,
+        temperature: 0,
+        max_tokens: 64,
+        messages: [{
+          role: "user",
+          content: [
+            { type: "text", text: GROUNDING_SYSTEM },
+            { type: "image_url", image_url: { url: image.data_url } },
+            { type: "text", text: query }
+          ]
+        }]
+      };
+      const response = await fetchJson(this.endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify(payload)
+      }, this.timeoutMs);
+      this.scheduleIdleRelease();
+      const raw = response?.choices?.[0]?.message?.content ?? response?.choices?.[0]?.text ?? "";
+      const normalized = parseGroundingPoint(raw);
+      const sourceWidth = Number.isFinite(image.source_width) ? image.source_width : image.width;
+      const sourceHeight = Number.isFinite(image.source_height) ? image.source_height : image.height;
+      const screen = {
+        x: Math.round(image.source_x + normalized.x * sourceWidth),
+        y: Math.round(image.source_y + normalized.y * sourceHeight)
+      };
+      const structured = {
+        query,
+        point: normalized,
+        screen,
+        capture: {
+          hwnd,
+          width: image.width,
+          height: image.height,
+          source_x: image.source_x,
+          source_y: image.source_y,
+          source_width: sourceWidth,
+          source_height: sourceHeight
+        },
+        model: this.model,
+        raw: String(raw).slice(0, 500)
+      };
+      success = true;
+      return {
+        text: `${query} -> normalized [${normalized.x.toFixed(4)}, ${normalized.y.toFixed(4)}], screen (${screen.x}, ${screen.y})`,
+        structured,
+        details: { operation: "find", model: this.model, query }
+      };
+    } finally {
+      if (!retainOverlay || !success) this.overlay.hide();
+    }
   }
 
   async click(request = {}) {
-    const found = await this.find(request);
     const button = String(request.button || "left").toLowerCase();
     if (!["left", "right", "middle"].includes(button)) invalid("button must be left, right, or middle");
-    const clicked = await this.desktop.execute({ operation: "click", x: found.structured.screen.x, y: found.structured.screen.y, button });
-    const structured = { ...found.structured, clicked: true, button, desktop: clicked.structured };
-    return {
-      text: `Located and clicked \"${found.structured.query}\" at (${found.structured.screen.x}, ${found.structured.screen.y}).`,
-      structured,
-      details: { operation: "click", model: this.model, query: found.structured.query }
-    };
+    try {
+      const found = await this.find(request, { retainOverlay: true });
+      this.overlay.show("control", found.structured.screen);
+      const clicked = await this.desktop.execute({ operation: "click", x: found.structured.screen.x, y: found.structured.screen.y, button });
+      await sleep(300);
+      const structured = { ...found.structured, clicked: true, button, desktop: clicked.structured };
+      return {
+        text: `Located and clicked \"${found.structured.query}\" at (${found.structured.screen.x}, ${found.structured.screen.y}).`,
+        structured,
+        details: { operation: "click", model: this.model, query: found.structured.query }
+      };
+    } finally {
+      this.overlay.hide();
+    }
   }
 }
