@@ -9,7 +9,7 @@ assert.deepEqual(parseGroundingPoint("(0.1,0.9)"), { x: 0.1, y: 0.9 });
 const calls = [];
 const overlayEvents = [];
 const overlay = {
-  show(mode, point = null) { overlayEvents.push({ type: "show", mode, point }); return true; },
+  show(mode, point = null, label = "Luna Eyes") { overlayEvents.push({ type: "show", mode, point, label }); return true; },
   hide() { overlayEvents.push({ type: "hide" }); },
   status() { return { enabled: true, visible: false, mode: "hidden", helper: "test", error: null }; }
 };
@@ -63,15 +63,15 @@ try {
   const found = await eyes.find({ query: "程序包", hwnd: "123" });
   assert.deepEqual(found.structured.screen, { x: 600, y: 800 });
   assert.deepEqual(overlayEvents.splice(0), [
-    { type: "show", mode: "observe", point: null },
+    { type: "show", mode: "observe", point: null, label: "showui-2b" },
     { type: "hide" }
   ]);
   const clicked = await eyes.click({ query: "程序包", hwnd: "123" });
   assert.equal(clicked.structured.clicked, true);
   assert.deepEqual(calls.at(-1), { operation: "click", x: 600, y: 800, button: "left" });
   assert.deepEqual(overlayEvents, [
-    { type: "show", mode: "observe", point: null },
-    { type: "show", mode: "control", point: { x: 600, y: 800 } },
+    { type: "show", mode: "observe", point: null, label: "showui-2b" },
+    { type: "show", mode: "control", point: { x: 600, y: 800 }, label: "showui-2b" },
     { type: "hide" }
   ]);
   console.log("screen vision core tests passed");

@@ -125,7 +125,7 @@ export class ScreenVisionOverlay {
     };
   }
 
-  show(mode = "observe", point = null) {
+  show(mode = "observe", point = null, label = "Luna Eyes") {
     if (!this.enabled) return false;
     if (!["observe", "control"].includes(mode)) return false;
     try {
@@ -134,6 +134,7 @@ export class ScreenVisionOverlay {
         point: point && Number.isFinite(point.x) && Number.isFinite(point.y)
           ? { x: Math.round(point.x), y: Math.round(point.y) }
           : null,
+        label: String(label || "Luna Eyes").slice(0, 80),
         parent_pid: process.pid,
         updated_at: Date.now()
       };
@@ -370,7 +371,7 @@ export class ScreenVisionService {
     }
 
     let success = false;
-    this.overlay.show("observe");
+    this.overlay.show("observe", null, this.model);
     try {
       const payload = {
         model: this.model,
@@ -431,7 +432,7 @@ export class ScreenVisionService {
     if (!["left", "right", "middle"].includes(button)) invalid("button must be left, right, or middle");
     try {
       const found = await this.find(request, { retainOverlay: true });
-      this.overlay.show("control", found.structured.screen);
+      this.overlay.show("control", found.structured.screen, this.model);
       const clicked = await this.desktop.execute({ operation: "click", x: found.structured.screen.x, y: found.structured.screen.y, button });
       await sleep(300);
       const structured = { ...found.structured, clicked: true, button, desktop: clicked.structured };

@@ -19,6 +19,7 @@ using System.Windows.Forms;
 
 public sealed class LunaEyesOverlayForm : Form {
     private string mode = "observe";
+    private string modelLabel = "Luna Eyes";
     private Point? target = null;
     private Rectangle virtualScreen;
 
@@ -36,6 +37,7 @@ public sealed class LunaEyesOverlayForm : Form {
         BackColor = Color.Magenta;
         TransparencyKey = Color.Magenta;
         DoubleBuffered = true;
+        Text = "Luna Eyes Overlay";
     }
 
     protected override bool ShowWithoutActivation { get { return true; } }
@@ -48,8 +50,9 @@ public sealed class LunaEyesOverlayForm : Form {
         }
     }
 
-    public void SetState(string nextMode, int? screenX, int? screenY) {
+    public void SetState(string nextMode, int? screenX, int? screenY, string label) {
         mode = String.Equals(nextMode, "control", StringComparison.OrdinalIgnoreCase) ? "control" : "observe";
+        modelLabel = String.IsNullOrWhiteSpace(label) ? "Luna Eyes" : label.Trim();
         target = (screenX.HasValue && screenY.HasValue)
             ? new Point(screenX.Value - virtualScreen.Left, screenY.Value - virtualScreen.Top)
             : (Point?)null;
@@ -77,8 +80,8 @@ public sealed class LunaEyesOverlayForm : Form {
             ? "Luna \u6b63\u5728\u63a7\u5236\u7535\u8111"
             : "Luna Eyes \u6b63\u5728\u89c2\u5bdf";
         string subtitle = controlling
-            ? "LocateAnything  \u00b7  \u8bf7\u6682\u65f6\u4e0d\u8981\u64cd\u4f5c\u9f20\u6807\u6216\u952e\u76d8"
-            : "LocateAnything  \u00b7  \u6b63\u5728\u89c6\u89c9\u5b9a\u4f4d\uff0c\u8bf7\u6682\u65f6\u4e0d\u8981\u6539\u53d8\u753b\u9762";
+            ? modelLabel + "  \u00b7  \u8bf7\u6682\u65f6\u4e0d\u8981\u64cd\u4f5c\u9f20\u6807\u6216\u952e\u76d8"
+            : modelLabel + "  \u00b7  \u6b63\u5728\u89c6\u89c9\u5b9a\u4f4d\uff0c\u8bf7\u6682\u65f6\u4e0d\u8981\u6539\u53d8\u753b\u9762";
         using (Font titleFont = new Font("Segoe UI", 12f, FontStyle.Bold, GraphicsUnit.Point))
         using (Font subFont = new Font("Segoe UI", 9f, FontStyle.Regular, GraphicsUnit.Point))
         using (SolidBrush white = new SolidBrush(Color.White)) {
@@ -127,7 +130,7 @@ function Update-OverlayState {
       $x = [Nullable[int]]([int]$state.point.x)
       $y = [Nullable[int]]([int]$state.point.y)
     }
-    $form.SetState([string]$state.mode, $x, $y)
+    $form.SetState([string]$state.mode, $x, $y, [string]$state.label)
   } catch {
     # State writes are atomic enough for this tiny file, but ignore a partial read and retry.
   }
