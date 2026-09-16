@@ -30,6 +30,9 @@ export const ACTION_DEFINITIONS = Object.freeze([
 
   action("browser_extension.status", "检查 Luna Browser 安装与升级状态", "read", "browser_extension.update", "status"),
   action("browser_extension.stage", "暂存 Luna Browser 升级包", "write", "browser_extension.update", "stage", true),
+  action("browser_extension.stage_begin", "开始分块传输 Luna Browser 升级包", "write", "browser_extension.update", "stage_begin", true),
+  action("browser_extension.stage_chunk", "传输 Luna Browser 升级包分块", "write", "browser_extension.update", "stage_chunk", true),
+  action("browser_extension.stage_commit", "校验并暂存分块 Luna Browser 升级包", "write", "browser_extension.update", "stage_commit", true),
   action("browser_extension.activate", "激活 Luna Browser 升级", "system", "browser_extension.update", "activate", true),
   action("browser_extension.confirm", "确认 Luna Browser 升级", "write", "browser_extension.update", "confirm", true),
   action("browser_extension.rollback", "回滚 Luna Browser 升级", "system", "browser_extension.update", "rollback", true),
@@ -62,6 +65,13 @@ export const ACTION_DEFINITIONS = Object.freeze([
   action("git.diff", "查看 Git 差异", "read", "git.read", "diff"),
   action("git.log", "查看 Git 历史", "read", "git.read", "log"),
   action("git.clone", "克隆公开仓库", "network", "git.remote", "clone", true),
+
+  action("download.start", "启动可靠下载", "network", "download.manage", "start", true),
+  action("download.list", "查看下载任务", "read", "download.manage", "list"),
+  action("download.status", "查看下载进度", "read", "download.manage", "status"),
+  action("download.pause", "暂停下载", "write", "download.manage", "pause", true),
+  action("download.resume", "恢复下载", "network", "download.manage", "resume", true),
+  action("download.cancel", "取消下载", "write", "download.manage", "cancel", true),
 
   action("project.execute", "执行工程命令", "execute", "project.execute", "run", true),
   action("project.install_dependencies", "安装项目依赖", "network", "project.dependencies", "install", true)

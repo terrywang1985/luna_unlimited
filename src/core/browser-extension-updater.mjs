@@ -135,18 +135,20 @@ export class BrowserExtensionUpdateService {
     }
     for (const candidate of this.browserRoots) {
       for (const profile of await profileDirectories(candidate.root)) {
-        const prefsPath = path.join(profile, "Preferences");
-        if (!await exists(prefsPath)) continue;
-        let prefs;
-        try { prefs = JSON.parse(await readFile(prefsPath, "utf8")); } catch { continue; }
-        const settings = prefs?.extensions?.settings;
-        if (!settings || typeof settings !== "object") continue;
-        for (const [extensionId, setting] of Object.entries(settings)) {
-          if (setting?.manifest?.name !== LUNA_BROWSER_NAME || typeof setting?.path !== "string" || !setting.path) continue;
-          const installPath = path.isAbsolute(setting.path) ? setting.path : path.resolve(profile, setting.path);
-          const manifest = await readManifest(installPath);
-          if (manifest?.name !== LUNA_BROWSER_NAME) continue;
-          found.push({ browser: candidate.browser, profile: path.basename(profile), extensionId, path: installPath, version: String(manifest.version || setting.manifest.version || "") });
+        for (const prefsName of ["Preferences", "Secure Preferences"]) {
+          const prefsPath = path.join(profile, prefsName);
+          if (!await exists(prefsPath)) continue;
+          let prefs;
+          try { prefs = JSON.parse(await readFile(prefsPath, "utf8")); } catch { continue; }
+          const settings = prefs?.extensions?.settings;
+          if (!settings || typeof settings !== "object") continue;
+          for (const [extensionId, setting] of Object.entries(settings)) {
+            if (typeof setting?.path !== "string" || !setting.path) continue;
+            const installPath = path.isAbsolute(setting.path) ? setting.path : path.resolve(profile, setting.path);
+            const manifest = await readManifest(installPath);
+            if (manifest?.name !== LUNA_BROWSER_NAME) continue;
+            found.push({ browser: candidate.browser, profile: path.basename(profile), extensionId, path: installPath, version: String(manifest.version || setting.manifest?.version || "") });
+          }
         }
       }
     }
@@ -176,7 +178,7 @@ export class BrowserExtensionUpdateService {
     const buffer = Buffer.from(packageBase64, "base64");
     if (!buffer.length || buffer.length > this.maxPackageBytes) throw coreError(CoreErrorCode.FILE_TOO_LARGE, `Extension package must be between 1 and ${this.maxPackageBytes} bytes`);
     const actualSha256 = sha256(buffer);
-    if (actualSha256 !== expectedSha256.toLocaleLowerCase()) throw coreError(CoreErrorCode.FILE_CHANGED, "Extension package SHA-256 mismatch", { expectedSha256, actualSha256 });
+    if (actualSha256 !== expectedSha256.toLocaleLowerCase()) throw coreError(CoreErrorCode.FILE_CHANGED, `Extension package SHA-256 mismatch: expected ${expectedSha256.toLocaleLowerCase()}, got ${actualSha256}, bytes=${buffer.length}, base64_chars=${packageBase64.length}`, { expectedSha256, actualSha256, bytes: buffer.length, base64Chars: packageBase64.length });
 
     const entries = readZipEntries(buffer);
     const manifestEntry = entries.find((entry) => entry.path === "manifest.json" && !entry.directory);
@@ -205,6 +207,60 @@ export class BrowserExtensionUpdateService {
     const metadata = { stageId, version, sha256: actualSha256, bytes: buffer.length, stagedPath: finalDir, stagedAt: new Date().toISOString() };
     await writeFile(path.join(finalDir, ".luna-update.json"), JSON.stringify(metadata, null, 2));
     return { text: JSON.stringify(metadata, null, 2), structured: metadata, details: metadata };
+  }
+
+  async stageBegin({ expectedSha256, version, totalChunks }) {
+    if (!/^[a-f0-9]{64}$/i.test(String(expectedSha256 || ""))) throw coreError(CoreErrorCode.INVALID_ARGUMENT, "expected_sha256 must be a SHA-256 digest");
+    if (!/^\d+(?:\.\d+){0,3}$/.test(String(version || ""))) throw coreError(CoreErrorCode.INVALID_ARGUMENT, "version must be a numeric Chrome extension version");
+    if (!Number.isInteger(totalChunks) || totalChunks < 1 || totalChunks > 4096) throw coreError(CoreErrorCode.INVALID_ARGUMENT, "total_chunks must be between 1 and 4096");
+    const transferId = `${version}-${String(expectedSha256).toLocaleLowerCase().slice(0, 12)}-${Date.now()}`;
+    const transferDir = path.join(this.updateRoot, "incoming", transferId);
+    await rm(transferDir, { recursive: true, force: true });
+    await mkdir(path.join(transferDir, "chunks"), { recursive: true });
+    const metadata = { transferId, version: String(version), expectedSha256: String(expectedSha256).toLocaleLowerCase(), totalChunks, nextIndex: 0, createdAt: new Date().toISOString() };
+    await writeFile(path.join(transferDir, "transfer.json"), JSON.stringify(metadata, null, 2));
+    const result = { transfer_id: transferId, version: metadata.version, expected_sha256: metadata.expectedSha256, total_chunks: totalChunks };
+    return { text: JSON.stringify(result, null, 2), structured: result, details: result };
+  }
+
+  async stageChunk({ transferId, index, chunkBase64, chunkSha256 }) {
+    if (!/^[0-9A-Za-z._-]{8,160}$/.test(String(transferId || ""))) throw coreError(CoreErrorCode.INVALID_ARGUMENT, "transfer_id is invalid");
+    if (!Number.isInteger(index) || index < 0 || index > 4095) throw coreError(CoreErrorCode.INVALID_ARGUMENT, "index must be between 0 and 4095");
+    if (typeof chunkBase64 !== "string" || chunkBase64.length < 1 || chunkBase64.length > 65536 || !/^[A-Za-z0-9+/=]+$/.test(chunkBase64)) throw coreError(CoreErrorCode.INVALID_ARGUMENT, "chunk_base64 must be a base64 fragment up to 65536 characters");
+    if (!/^[a-f0-9]{64}$/i.test(String(chunkSha256 || ""))) throw coreError(CoreErrorCode.INVALID_ARGUMENT, "chunk_sha256 must be a SHA-256 digest");
+    const actualChunkSha256 = sha256(Buffer.from(chunkBase64, "utf8"));
+    if (actualChunkSha256 !== String(chunkSha256).toLocaleLowerCase()) throw coreError(CoreErrorCode.FILE_CHANGED, `Extension transfer chunk ${index} SHA-256 mismatch`, { index, expectedSha256: String(chunkSha256).toLocaleLowerCase(), actualSha256: actualChunkSha256, base64Chars: chunkBase64.length });
+    const transferDir = path.join(this.updateRoot, "incoming", transferId);
+    let metadata;
+    try { metadata = JSON.parse(await readFile(path.join(transferDir, "transfer.json"), "utf8")); } catch { throw coreError(CoreErrorCode.PATH_NOT_FOUND, `Unknown browser extension transfer: ${transferId}`); }
+    if (index !== metadata.nextIndex) throw coreError(CoreErrorCode.INVALID_ARGUMENT, `Expected chunk ${metadata.nextIndex}, got ${index}`);
+    if (index >= metadata.totalChunks) throw coreError(CoreErrorCode.INVALID_ARGUMENT, `Chunk ${index} exceeds declared total ${metadata.totalChunks}`);
+    await writeFile(path.join(transferDir, "chunks", `${String(index).padStart(6, "0")}.b64`), chunkBase64, { flag: "wx" });
+    metadata.nextIndex += 1;
+    await writeFile(path.join(transferDir, "transfer.json"), JSON.stringify(metadata, null, 2));
+    const result = { transfer_id: transferId, received_index: index, received_chunks: metadata.nextIndex, total_chunks: metadata.totalChunks, base64_chars: chunkBase64.length, chunk_sha256: actualChunkSha256 };
+    return { text: JSON.stringify(result), structured: result, details: result };
+  }
+
+  async stageCommit({ transferId }) {
+    if (!/^[0-9A-Za-z._-]{8,160}$/.test(String(transferId || ""))) throw coreError(CoreErrorCode.INVALID_ARGUMENT, "transfer_id is invalid");
+    const transferDir = path.join(this.updateRoot, "incoming", transferId);
+    let metadata;
+    try { metadata = JSON.parse(await readFile(path.join(transferDir, "transfer.json"), "utf8")); } catch { throw coreError(CoreErrorCode.PATH_NOT_FOUND, `Unknown browser extension transfer: ${transferId}`); }
+    if (metadata.nextIndex !== metadata.totalChunks) throw coreError(CoreErrorCode.INVALID_ARGUMENT, `Transfer is incomplete: ${metadata.nextIndex}/${metadata.totalChunks} chunks`);
+    const names = (await readdir(path.join(transferDir, "chunks"))).filter((name) => name.endsWith(".b64")).sort();
+    if (names.length !== metadata.totalChunks) throw coreError(CoreErrorCode.ARTIFACT_INVALID, `Transfer chunk count mismatch: ${names.length}/${metadata.totalChunks}`);
+    const parts = [];
+    let chars = 0;
+    for (const name of names) {
+      const part = await readFile(path.join(transferDir, "chunks", name), "utf8");
+      chars += part.length;
+      if (chars > Math.ceil(this.maxPackageBytes * 4 / 3) + 16) throw coreError(CoreErrorCode.FILE_TOO_LARGE, "Chunked extension package exceeds maximum size");
+      parts.push(part);
+    }
+    const result = await this.stage({ packageBase64: parts.join(""), expectedSha256: metadata.expectedSha256, version: metadata.version });
+    await rm(transferDir, { recursive: true, force: true });
+    return result;
   }
 
   async activate({ version, sha256: expectedSha256, extensionId = null }) {

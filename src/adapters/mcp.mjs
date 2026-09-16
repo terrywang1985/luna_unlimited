@@ -63,7 +63,7 @@ function createMcpServer(core, context) {
     { name: "luna-unlimited", version: "0.8.2" },
     {
       instructions:
-        executionRole + " Call luna.capabilities first in each new conversation so the current execution boundary and connected abilities are explicit. Tools are grouped by domain; select the operation field inside each domain tool. Use workspace.read(stat) before changing an existing file, code.patch for revision-protected code edits, artifact tools for binary files, and checkpoint.write(create) before risky refactors. system.execute is destructive and requires Host confirmation, with optional additional local Dashboard approval."
+        executionRole + " Call luna.capabilities first in each new conversation so the current execution boundary and connected abilities are explicit. Tools are grouped by domain; select the operation field inside each domain tool. Use workspace.read(stat) before changing an existing file, code.patch for revision-protected code edits, artifact tools for binary files, checkpoint.write(create) before risky refactors, and download.manage for large or resumable HTTP(S) downloads instead of ad-hoc curl/PowerShell download loops. system.execute is destructive and requires Host confirmation, with optional additional local Dashboard approval."
     }
   );
 
@@ -158,6 +158,9 @@ function createMcpServer(core, context) {
           expected_sha256: sha256,
           version: z.string().regex(/^\d+(?:\.\d+){0,3}$/)
         }),
+        z.object({ operation: z.literal("stage_begin"), expected_sha256: sha256, version: z.string().regex(/^\d+(?:\.\d+){0,3}$/), total_chunks: z.number().int().min(1).max(4096) }),
+        z.object({ operation: z.literal("stage_chunk"), transfer_id: z.string().min(8).max(160).regex(/^[0-9A-Za-z._-]+$/), index: z.number().int().min(0).max(4095), chunk_base64: z.string().min(1).max(65536).regex(/^[A-Za-z0-9+/=]+$/), chunk_sha256: sha256 }),
+        z.object({ operation: z.literal("stage_commit"), transfer_id: z.string().min(8).max(160).regex(/^[0-9A-Za-z._-]+$/) }),
         z.object({
           operation: z.literal("activate"),
           version: z.string().regex(/^\d+(?:\.\d+){0,3}$/),
@@ -176,6 +179,9 @@ function createMcpServer(core, context) {
         expectedSha256: input.expected_sha256,
         version: input.version
       }, context, `Stage Luna Browser ${input.version}`);
+      if (input.operation === "stage_begin") return action(core, "browser_extension.stage_begin", { expectedSha256: input.expected_sha256, version: input.version, totalChunks: input.total_chunks }, context, `Begin chunked Luna Browser ${input.version} transfer`);
+      if (input.operation === "stage_chunk") return action(core, "browser_extension.stage_chunk", { transferId: input.transfer_id, index: input.index, chunkBase64: input.chunk_base64, chunkSha256: input.chunk_sha256 }, context, `Receive Luna Browser update chunk ${input.index}`);
+      if (input.operation === "stage_commit") return action(core, "browser_extension.stage_commit", { transferId: input.transfer_id }, context, `Verify and stage chunked Luna Browser update ${input.transfer_id}`);
       if (input.operation === "activate") return action(core, "browser_extension.activate", {
         version: input.version,
         sha256: input.sha256,
@@ -209,6 +215,43 @@ function createMcpServer(core, context) {
         cwd,
         timeoutSeconds: timeout_seconds
       }, context, `SYSTEM COMMAND [${core.execution.profile}]\n${display}\ncwd: ${cwd}\nApproval mode: ${core.execution.approvalMode}.`);
+    }
+  );
+
+  server.registerTool(
+    "download.manage",
+    {
+      title: "Reliable local downloads via AI Downloader",
+      description: "Start, inspect, pause, resume, or cancel reliable HTTP(S) downloads using the local AI Downloader service. Prefer this for large model/assets downloads because it supports persistent jobs, HTTP range resume, and optional multi-connection pget. Start destinations are restricted to the authorized Luna workspace.",
+      inputSchema: { request: z.discriminatedUnion("operation", [
+        z.object({
+          operation: z.literal("start"),
+          url: z.string().url(),
+          destination: relativePath,
+          filename: z.string().min(1).max(220).optional(),
+          connections: z.number().int().min(1).max(4).default(4)
+        }),
+        z.object({ operation: z.literal("list") }),
+        z.object({ operation: z.literal("status"), download_id: z.string().min(5).max(120) }),
+        z.object({ operation: z.literal("pause"), download_id: z.string().min(5).max(120) }),
+        z.object({ operation: z.literal("resume"), download_id: z.string().min(5).max(120) }),
+        z.object({ operation: z.literal("cancel"), download_id: z.string().min(5).max(120) })
+      ]) },
+      annotations: { readOnlyHint: false, openWorldHint: true, destructiveHint: true }
+    },
+    async ({ request: input }) => {
+      if (input.operation === "start") {
+        return action(core, "download.start", {
+          url: input.url,
+          destination: input.destination,
+          filename: input.filename || null,
+          connections: input.connections
+        }, context, `Download ${input.url} to workspace path ${input.destination}`);
+      }
+      if (input.operation === "list") return action(core, "download.list", {}, context);
+      const request = { downloadId: input.download_id };
+      return action(core, `download.${input.operation}`, request, context,
+        `${input.operation} download ${input.download_id}`);
     }
   );
 

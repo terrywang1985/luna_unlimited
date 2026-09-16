@@ -9,6 +9,7 @@ import { CheckpointService } from "./checkpoints.mjs";
 import { CommandService } from "./commands.mjs";
 import { auditContext, createWorkSessionContext } from "./context.mjs";
 import { DesktopService } from "./desktop.mjs";
+import { DownloaderBridgeService } from "./downloader-bridge.mjs";
 import { BrowserExtensionUpdateService } from "./browser-extension-updater.mjs";
 import { CoreErrorCode, coreError, normalizeCoreError } from "./errors.mjs";
 import { FileService } from "./files.mjs";
@@ -60,6 +61,9 @@ export class LunaCore {
     this.execution = { profile: executionProfile, approvalMode: systemApprovalMode, desktopEnabled: effectiveDesktopEnabled, ...runtimeIdentity };
     const disabledActions = [
       ...(executionProfile === "restricted" ? ["system.execute"] : []),
+      ...(runtimeIdentity.platform !== "win32" ? [
+        "download.start", "download.list", "download.status", "download.pause", "download.resume", "download.cancel"
+      ] : []),
       ...(!effectiveDesktopEnabled ? [
         "desktop.windows", "desktop.screenshot", "desktop.focus", "desktop.move", "desktop.click",
         "desktop.double_click", "desktop.drag", "desktop.scroll", "desktop.type", "desktop.key"
@@ -116,6 +120,7 @@ export class LunaCore {
       runtimeIdentity,
       maxPackageBytes: Math.min(maxArtifactBytes, 8 * 1024 * 1024)
     });
+    this.downloader = new DownloaderBridgeService({ workspace: this.workspace });
     this.repositories = new RepositoryService({
       workspace: this.workspace,
       mutations: this.mutations,
@@ -148,6 +153,9 @@ export class LunaCore {
       "desktop.key": (request) => this.desktop.execute(request),
       "browser_extension.status": () => this.browserExtensionUpdates.status(),
       "browser_extension.stage": (request) => this.browserExtensionUpdates.stage(request),
+      "browser_extension.stage_begin": (request) => this.browserExtensionUpdates.stageBegin(request),
+      "browser_extension.stage_chunk": (request) => this.browserExtensionUpdates.stageChunk(request),
+      "browser_extension.stage_commit": (request) => this.browserExtensionUpdates.stageCommit(request),
       "browser_extension.activate": (request) => this.browserExtensionUpdates.activate(request),
       "browser_extension.confirm": (request) => this.browserExtensionUpdates.confirm(request),
       "browser_extension.rollback": () => this.browserExtensionUpdates.rollback(),
@@ -174,6 +182,12 @@ export class LunaCore {
       "git.diff": (request) => this.commands.execute({ ...request, program: "git", args: request.args }),
       "git.log": (request) => this.commands.execute({ ...request, program: "git", args: request.args }),
       "git.clone": (request) => this.repositories.clone(request),
+      "download.start": (request) => this.downloader.start(request),
+      "download.list": () => this.downloader.list(),
+      "download.status": (request) => this.downloader.status(request),
+      "download.pause": (request) => this.downloader.pause(request),
+      "download.resume": (request) => this.downloader.resume(request),
+      "download.cancel": (request) => this.downloader.cancel(request),
       "project.execute": (request) => this.commands.execute(request),
       "project.install_dependencies": (request) => this.commands.installDependencies(request)
     };
