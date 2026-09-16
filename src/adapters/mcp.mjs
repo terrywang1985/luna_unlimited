@@ -63,7 +63,7 @@ function createMcpServer(core, context) {
     { name: "luna-unlimited", version: "0.8.2" },
     {
       instructions:
-        executionRole + " Call luna.capabilities first in each new conversation so the current execution boundary and connected abilities are explicit. Tools are grouped by domain; select the operation field inside each domain tool. Use workspace.read(stat) before changing an existing file, code.patch for revision-protected code edits, artifact tools for binary files, checkpoint.write(create) before risky refactors, and download.manage for large or resumable HTTP(S) downloads instead of ad-hoc curl/PowerShell download loops. system.execute is destructive and requires Host confirmation, with optional additional local Dashboard approval."
+        executionRole + " Call luna.capabilities first in each new conversation so the current execution boundary and connected abilities are explicit. Tools are grouped by domain; select the operation field inside each domain tool. Use workspace.read(stat) before changing an existing file, code.patch for revision-protected code edits, artifact tools for binary files, checkpoint.write(create) before risky refactors, and download.manage for large or resumable HTTP(S) downloads instead of ad-hoc curl/PowerShell download loops. For Windows desktop work, use desktop.read/control when coordinates are clear and fall back to desktop.vision when the target is visually ambiguous or repeated screenshots are not enough; prefer vision find before vision click when practical. system.execute is destructive and requires Host confirmation, with optional additional local Dashboard approval."
     }
   );
 
@@ -143,6 +143,41 @@ function createMcpServer(core, context) {
     },
     async ({ request }) => action(core, `desktop.${request.operation}`, request, context,
       `Windows desktop input: ${request.operation}`)
+  );
+
+  server.registerTool(
+    "desktop.vision",
+    {
+      title: "Ground Windows UI elements with Luna Eyes",
+      description: "Use the optional local LocateAnything grounding model when normal desktop screenshots are not precise enough. It can report status without loading the model, find an element, locate-and-click it, or release any active inference process. The model is invoked on demand rather than at Luna startup.",
+      inputSchema: { request: z.discriminatedUnion("operation", [
+        z.object({ operation: z.literal("status") }),
+        z.object({ operation: z.literal("release") }),
+        z.object({
+          operation: z.literal("find"),
+          query: z.string().min(1).max(500),
+          hwnd: z.string().regex(/^\d{1,20}$/).optional(),
+          max_width: z.number().int().min(640).max(2560).default(1344),
+          quality: z.number().int().min(40).max(90).default(78)
+        }),
+        z.object({
+          operation: z.literal("click"),
+          query: z.string().min(1).max(500),
+          hwnd: z.string().regex(/^\d{1,20}$/).optional(),
+          max_width: z.number().int().min(640).max(2560).default(1344),
+          quality: z.number().int().min(40).max(90).default(78),
+          button: z.enum(["left", "right", "middle"]).default("left")
+        })
+      ]) },
+      annotations: { readOnlyHint: false, openWorldHint: false, destructiveHint: true }
+    },
+    async ({ request }) => {
+      if (request.operation === "status") return action(core, "desktop.vision_status", {}, context, "Check Luna Eyes without loading the model");
+      if (request.operation === "release") return action(core, "desktop.vision_release", {}, context, "Release Luna Eyes inference resources");
+      const common = { query: request.query, hwnd: request.hwnd || null, max_width: request.max_width, quality: request.quality };
+      if (request.operation === "find") return action(core, "desktop.vision_find", common, context, `Locate Windows UI element visually: ${request.query}`);
+      return action(core, "desktop.vision_click", { ...common, button: request.button }, context, `Locate and click Windows UI element visually: ${request.query}`);
+    }
   );
 
   server.registerTool(

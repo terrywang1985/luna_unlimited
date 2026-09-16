@@ -188,6 +188,19 @@ function Capture-Screenshot($Payload) {
     $width = [Math]::Max(1, $rect.Right - $rect.Left)
     $height = [Math]::Max(1, $rect.Bottom - $rect.Top)
   }
+  if ($null -ne $Payload.crop_width -and $null -ne $Payload.crop_height) {
+    $cropLeft = [int]$Payload.crop_left
+    $cropTop = [int]$Payload.crop_top
+    $cropWidth = [int]$Payload.crop_width
+    $cropHeight = [int]$Payload.crop_height
+    if ($cropLeft -lt 0 -or $cropTop -lt 0 -or $cropLeft + $cropWidth -gt $width -or $cropTop + $cropHeight -gt $height) {
+      throw "Screenshot crop is outside the selected capture bounds."
+    }
+    $left += $cropLeft; $top += $cropTop
+    $width = $cropWidth; $height = $cropHeight
+  }
+  $sourceWidth = $width
+  $sourceHeight = $height
   $bitmap = [Drawing.Bitmap]::new($width, $height)
   $graphics = [Drawing.Graphics]::FromImage($bitmap)
   try { $graphics.CopyFromScreen($left, $top, 0, 0, [Drawing.Size]::new($width, $height)) }
@@ -223,6 +236,8 @@ function Capture-Screenshot($Payload) {
       height = $height
       source_x = $left
       source_y = $top
+      source_width = $sourceWidth
+      source_height = $sourceHeight
       bytes = $bytes.Length
       data_url = 'data:image/jpeg;base64,' + [Convert]::ToBase64String($bytes)
     }

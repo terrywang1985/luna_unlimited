@@ -15,6 +15,7 @@ const expectedTools = [
   "code.patch",
   "desktop.control",
   "desktop.read",
+  "desktop.vision",
   "download.manage",
   "git.read",
   "git.remote",
@@ -31,6 +32,7 @@ const expectedOperations = {
   "browser_extension.update": ["activate", "confirm", "rollback", "stage", "stage_begin", "stage_chunk", "stage_commit", "status"],
   "desktop.read": ["screenshot", "windows"],
   "desktop.control": ["click", "double_click", "drag", "focus", "key", "move", "scroll", "type"],
+  "desktop.vision": ["click", "find", "release", "status"],
   "download.manage": ["cancel", "list", "pause", "resume", "start", "status"],
   "workspace.read": ["list", "range", "search", "stat", "text"],
   "workspace.write": ["many", "mkdir", "replace", "text"],
@@ -120,7 +122,7 @@ try {
 
   const capabilitiesResult = await client.callTool({ name: "luna.capabilities", arguments: {} });
   const capabilities = capabilitiesResult.structuredContent;
-  if (capabilities?.server?.version !== "0.8.2" || Object.keys(capabilities.tools || {}).length !== 18) {
+  if (capabilities?.server?.version !== "0.8.2" || Object.keys(capabilities.tools || {}).length !== 19) {
     throw new Error("Capability catalog did not describe the v0.8.2 compact tools");
   }
   if (!capabilities.actions?.["workspace.write_text"] || capabilities.workspace?.rootName?.includes(":\\")) {
@@ -263,7 +265,7 @@ try {
   await decideApproval(denial.id, "deny");
   if (!(await deniedCall).isError) throw new Error("Denied action must return an MCP error");
 
-  console.log("PASS: v0.8.2 exposes exactly 18 compact domain tools and no legacy flat tools");
+  console.log("PASS: v0.8.2 exposes exactly 19 compact domain tools and no legacy flat tools");
   console.log("PASS: nested oneOf operation schemas are visible through tools/list");
   console.log("PASS: read/write/search/Git behavior remains available through domain operations");
   console.log("PASS: action-level permission, approval, audit and path safety remain enforced");

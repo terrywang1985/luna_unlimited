@@ -6,6 +6,7 @@ import { runCapturedProcess } from "./process.mjs";
 
 const DEFAULT_HELPER = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../scripts/desktop-host.ps1");
 const DESKTOP_OUTPUT_LIMIT = 10 * 1024 * 1024;
+const DESKTOP_OVERLAY_HOLD_MS = 450;
 
 function invalid(message) {
   throw coreError(CoreErrorCode.INVALID_ARGUMENT, message);
@@ -34,13 +35,21 @@ function normalizeRequest(request = {}) {
   switch (operation) {
     case "windows":
       return { operation };
-    case "screenshot":
+    case "screenshot": {
+      const cropWidth = request.crop_width === undefined || request.crop_width === null ? null : finiteInteger(request.crop_width, "crop_width", 1, 10000);
+      const cropHeight = request.crop_height === undefined || request.crop_height === null ? null : finiteInteger(request.crop_height, "crop_height", 1, 10000);
+      if ((cropWidth === null) !== (cropHeight === null)) invalid("crop_width and crop_height must be provided together");
       return {
         operation,
         hwnd: optionalHwnd(request.hwnd),
         max_width: finiteInteger(request.max_width ?? 1600, "max_width", 640, 2560),
-        quality: finiteInteger(request.quality ?? 70, "quality", 40, 90)
+        quality: finiteInteger(request.quality ?? 70, "quality", 40, 90),
+        crop_left: finiteInteger(request.crop_left ?? 0, "crop_left", 0, 10000),
+        crop_top: finiteInteger(request.crop_top ?? 0, "crop_top", 0, 10000),
+        crop_width: cropWidth,
+        crop_height: cropHeight
       };
+    }
     case "focus":
       return { operation, hwnd: optionalHwnd(request.hwnd) ?? invalid("hwnd is required") };
     case "move":
@@ -85,14 +94,39 @@ function normalizeRequest(request = {}) {
   }
 }
 
+function overlayState(payload) {
+  const observing = payload.operation === "windows" || payload.operation === "screenshot";
+  let point = null;
+  if (["move", "click", "double_click"].includes(payload.operation)) {
+    point = { x: payload.x, y: payload.y };
+  } else if (payload.operation === "drag") {
+    point = { x: payload.to_x, y: payload.to_y };
+  } else if (payload.operation === "scroll" && Number.isInteger(payload.x) && Number.isInteger(payload.y)) {
+    point = { x: payload.x, y: payload.y };
+  }
+  return {
+    mode: observing ? "observe" : "control",
+    point,
+    label: observing ? "桌面读取" : "桌面控制"
+  };
+}
+
 export class DesktopService {
-  constructor({ enabled = false, helperPath = DEFAULT_HELPER, maxOutputBytes = DESKTOP_OUTPUT_LIMIT } = {}) {
+  constructor({
+    enabled = false,
+    helperPath = DEFAULT_HELPER,
+    maxOutputBytes = DESKTOP_OUTPUT_LIMIT,
+    overlay = null,
+    runProcess = runCapturedProcess
+  } = {}) {
     this.enabled = Boolean(enabled && process.platform === "win32");
     this.helperPath = helperPath;
     this.maxOutputBytes = Math.max(DESKTOP_OUTPUT_LIMIT, maxOutputBytes || 0);
+    this.overlay = overlay;
+    this.runProcess = runProcess;
   }
 
-  async execute(request) {
+  async execute(request, { activityOverlay = true } = {}) {
     if (!this.enabled) {
       throw coreError(CoreErrorCode.TOOL_DISABLED, "Desktop control is disabled. On Windows restart Luna Unlimited with -EnableDesktop.");
     }
@@ -101,50 +135,59 @@ export class DesktopService {
     }
 
     const payload = normalizeRequest(request);
-    const encoded = Buffer.from(JSON.stringify(payload), "utf8").toString("base64");
-    const output = await runCapturedProcess("powershell.exe", [
-      "-NoProfile",
-      "-NonInteractive",
-      "-ExecutionPolicy", "Bypass",
-      "-File", this.helperPath,
-      "-PayloadBase64", encoded
-    ], {
-      cwd: path.dirname(this.helperPath),
-      timeoutMs: payload.operation === "screenshot" ? 20000 : 10000,
-      maxOutputBytes: this.maxOutputBytes
-    });
-
-    if (output.timedOut) throw coreError(CoreErrorCode.COMMAND_TIMEOUT, `desktop.${payload.operation} timed out`);
-    if (output.exitCode !== 0) {
-      throw coreError(CoreErrorCode.PROCESS_FAILED, output.stderr.trim() || `desktop.${payload.operation} failed`, {
-        exitCode: output.exitCode
-      });
+    const overlayActive = Boolean(activityOverlay && this.overlay);
+    if (overlayActive) {
+      const state = overlayState(payload);
+      this.overlay.show(state.mode, state.point, state.label);
     }
-    if (output.stdoutTruncated) {
-      throw coreError(CoreErrorCode.OPERATION_LIMIT_EXCEEDED, "Desktop result exceeded the safe transport size limit");
-    }
-
-    let structured;
     try {
-      structured = JSON.parse(output.stdout.trim());
-    } catch {
-      throw coreError(CoreErrorCode.PROCESS_FAILED, "Desktop helper returned invalid JSON");
-    }
-    if (structured?.ok === false) {
-      throw coreError(CoreErrorCode.PROCESS_FAILED, structured.error || `desktop.${payload.operation} failed`);
-    }
+      const encoded = Buffer.from(JSON.stringify(payload), "utf8").toString("base64");
+      const output = await this.runProcess("powershell.exe", [
+        "-NoProfile",
+        "-NonInteractive",
+        "-ExecutionPolicy", "Bypass",
+        "-File", this.helperPath,
+        "-PayloadBase64", encoded
+      ], {
+        cwd: path.dirname(this.helperPath),
+        timeoutMs: payload.operation === "screenshot" ? 20000 : 10000,
+        maxOutputBytes: this.maxOutputBytes
+      });
 
-    const summary = payload.operation === "screenshot"
-      ? `Captured desktop screenshot (${structured.width}x${structured.height}, ${structured.mime_type}).`
-      : JSON.stringify(structured, null, 2);
-    return {
-      text: summary,
-      structured,
-      details: {
-        operation: payload.operation,
-        screenshotBytes: payload.operation === "screenshot" ? Math.round((structured.data_url?.length || 0) * 0.75) : 0
+      if (output.timedOut) throw coreError(CoreErrorCode.COMMAND_TIMEOUT, `desktop.${payload.operation} timed out`);
+      if (output.exitCode !== 0) {
+        throw coreError(CoreErrorCode.PROCESS_FAILED, output.stderr.trim() || `desktop.${payload.operation} failed`, {
+          exitCode: output.exitCode
+        });
       }
-    };
+      if (output.stdoutTruncated) {
+        throw coreError(CoreErrorCode.OPERATION_LIMIT_EXCEEDED, "Desktop result exceeded the safe transport size limit");
+      }
+
+      let structured;
+      try {
+        structured = JSON.parse(output.stdout.trim());
+      } catch {
+        throw coreError(CoreErrorCode.PROCESS_FAILED, "Desktop helper returned invalid JSON");
+      }
+      if (structured?.ok === false) {
+        throw coreError(CoreErrorCode.PROCESS_FAILED, structured.error || `desktop.${payload.operation} failed`);
+      }
+
+      const summary = payload.operation === "screenshot"
+        ? `Captured desktop screenshot (${structured.width}x${structured.height}, ${structured.mime_type}).`
+        : JSON.stringify(structured, null, 2);
+      return {
+        text: summary,
+        structured,
+        details: {
+          operation: payload.operation,
+          screenshotBytes: payload.operation === "screenshot" ? Math.round((structured.data_url?.length || 0) * 0.75) : 0
+        }
+      };
+    } finally {
+      if (overlayActive) this.overlay.hide(DESKTOP_OVERLAY_HOLD_MS);
+    }
   }
 }
 
