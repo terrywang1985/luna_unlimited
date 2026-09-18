@@ -145,6 +145,9 @@ export class ScreenVisionOverlay {
     this.stateFile = stateFile;
     this.child = null;
     this.mode = "hidden";
+    this.point = null;
+    this.label = "Luna Eyes";
+    this.cancelPid = null;
     this.lastError = null;
     this.hideTimer = null;
   }
@@ -155,8 +158,31 @@ export class ScreenVisionOverlay {
       visible: Boolean(this.child && this.child.exitCode === null),
       mode: this.mode,
       helper: this.helperPath,
+      cancel_pid: this.cancelPid,
       error: this.lastError
     };
+  }
+
+  writeState() {
+    if (!this.enabled || !["observe", "control"].includes(this.mode)) return false;
+    const payload = {
+      mode: this.mode,
+      point: this.point,
+      label: this.label,
+      cancel_pid: this.cancelPid,
+      parent_pid: process.pid,
+      updated_at: Date.now()
+    };
+    writeFileSync(this.stateFile, JSON.stringify(payload), "utf8");
+    return true;
+  }
+
+  setCancelablePid(pid = null) {
+    this.cancelPid = Number.isInteger(pid) && pid > 0 ? pid : null;
+    try { return this.writeState(); } catch (error) {
+      this.lastError = error?.message || String(error);
+      return false;
+    }
   }
 
   show(mode = "observe", point = null, label = "Luna Eyes") {
@@ -167,17 +193,13 @@ export class ScreenVisionOverlay {
         clearTimeout(this.hideTimer);
         this.hideTimer = null;
       }
-      const payload = {
-        mode,
-        point: point && Number.isFinite(point.x) && Number.isFinite(point.y)
-          ? { x: Math.round(point.x), y: Math.round(point.y) }
-          : null,
-        label: String(label || "Luna Eyes").slice(0, 80),
-        parent_pid: process.pid,
-        updated_at: Date.now()
-      };
-      writeFileSync(this.stateFile, JSON.stringify(payload), "utf8");
       this.mode = mode;
+      this.point = point && Number.isFinite(point.x) && Number.isFinite(point.y)
+        ? { x: Math.round(point.x), y: Math.round(point.y) }
+        : null;
+      this.label = String(label || "Luna Eyes").slice(0, 80);
+      this.cancelPid = null;
+      this.writeState();
       this.lastError = null;
       if (this.child && this.child.exitCode === null) return true;
 
@@ -226,6 +248,8 @@ export class ScreenVisionOverlay {
       this.hideTimer = null;
     }
     this.mode = "hidden";
+    this.point = null;
+    this.cancelPid = null;
     const child = this.child;
     this.child = null;
     try { child?.kill(); } catch {}
@@ -340,6 +364,7 @@ export class ScreenVisionService {
           threads: this.threads
         }), this.timeoutMs, process.env, (child) => {
           this.child = child;
+          this.overlay.setCancelablePid?.(child.pid);
           child.once("exit", () => { if (this.child === child) this.child = null; });
         });
       const raw = typeof detectionResult === "string" ? detectionResult : detectionResult?.stdout ?? JSON.stringify(detectionResult);

@@ -54,6 +54,9 @@ const overlay = new ScreenVisionOverlay({
   spawnProcess: () => child
 });
 overlay.show("observe", null, "桌面读取");
+overlay.setCancelablePid(43210);
+const state = JSON.parse(await import("node:fs").then(({ readFileSync }) => readFileSync(stateFile, "utf8")));
+assert.equal(state.cancel_pid, 43210);
 overlay.hide(30);
 overlay.show("control", { x: 10, y: 20 }, "桌面控制");
 await new Promise((resolve) => setTimeout(resolve, 50));

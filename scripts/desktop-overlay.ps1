@@ -114,9 +114,67 @@ public sealed class LunaEyesOverlayForm : Form {
 $bounds = [System.Windows.Forms.SystemInformation]::VirtualScreen
 $form = [LunaEyesOverlayForm]::new($bounds)
 $lastState = ''
+$script:cancelPid = 0
+$stopViewText = ([string][char]0x505C) + ([char]0x6B62) + ([char]0x67E5) + ([char]0x770B)
+$stopControlText = ([string][char]0x505C) + ([char]0x6B62) + ([char]0x63A7) + ([char]0x5236)
+
+$stopForm = [System.Windows.Forms.Form]::new()
+$stopForm.StartPosition = [System.Windows.Forms.FormStartPosition]::Manual
+$stopForm.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::None
+$stopForm.ShowInTaskbar = $false
+$stopForm.TopMost = $true
+$stopForm.BackColor = [System.Drawing.Color]::FromArgb(0, 88, 178)
+$stopForm.Size = [System.Drawing.Size]::new(88, 34)
+$stopForm.Text = 'Luna Stop'
+
+$stopButton = [System.Windows.Forms.Button]::new()
+$stopButton.Dock = [System.Windows.Forms.DockStyle]::Fill
+$stopButton.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
+$stopButton.FlatAppearance.BorderSize = 1
+$stopButton.FlatAppearance.BorderColor = [System.Drawing.Color]::White
+$stopButton.BackColor = [System.Drawing.Color]::FromArgb(0, 88, 178)
+$stopButton.ForeColor = [System.Drawing.Color]::White
+$stopButton.Font = [System.Drawing.Font]::new('Segoe UI', 9, [System.Drawing.FontStyle]::Bold)
+$stopButton.Text = $stopViewText
+$stopButton.AccessibleName = $stopViewText
+$stopButton.AccessibleRole = [System.Windows.Forms.AccessibleRole]::PushButton
+$stopButton.Cursor = [System.Windows.Forms.Cursors]::Hand
+$stopForm.Controls.Add($stopButton)
+
+function Position-StopButton([string]$mode) {
+  $bannerWidth = if ($mode -eq 'control') { 560 } else { 520 }
+  $bannerX = $bounds.Left + [Math]::Max(12, [int](($bounds.Width - $bannerWidth) / 2))
+  $stopForm.Location = [System.Drawing.Point]::new(
+    $bannerX + $bannerWidth - $stopForm.Width - 10,
+    $bounds.Top + 24
+  )
+  $stopButton.Text = if ($mode -eq 'control') { $stopControlText } else { $stopViewText }
+  $stopButton.AccessibleName = $stopButton.Text
+}
+
+$stopButton.Add_Click({
+  try {
+    if ($script:cancelPid -gt 0) {
+      Stop-Process -Id $script:cancelPid -Force -ErrorAction SilentlyContinue
+    } else {
+      Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+        Where-Object {
+          $_.ParentProcessId -eq $ParentPid -and
+          $_.Name -like 'locate-anything*'
+        } |
+        ForEach-Object {
+          Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
+        }
+    }
+  } catch {}
+  try { Remove-Item -LiteralPath $StateFile -Force -ErrorAction SilentlyContinue } catch {}
+  try { $stopForm.Close() } catch {}
+  try { $form.Close() } catch {}
+})
 
 function Update-OverlayState {
   if (-not (Test-Path -LiteralPath $StateFile)) {
+    try { $stopForm.Close() } catch {}
     $form.Close()
     return
   }
@@ -126,9 +184,12 @@ function Update-OverlayState {
     $script:lastState = $raw
     $state = $raw | ConvertFrom-Json
     if ([string]$state.mode -eq 'hidden') {
+      try { $stopForm.Close() } catch {}
       $form.Close()
       return
     }
+    $script:cancelPid = if ($null -ne $state.cancel_pid) { [int]$state.cancel_pid } else { 0 }
+    Position-StopButton ([string]$state.mode)
     $x = $null; $y = $null
     if ($null -ne $state.point) {
       $x = [Nullable[int]]([int]$state.point.x)
@@ -145,6 +206,7 @@ $timer.Interval = 100
 $timer.Add_Tick({
   try {
     if ($ParentPid -gt 0 -and $null -eq (Get-Process -Id $ParentPid -ErrorAction SilentlyContinue)) {
+      try { $stopForm.Close() } catch {}
       $form.Close()
       return
     }
@@ -152,6 +214,15 @@ $timer.Add_Tick({
   } catch {}
 })
 
-$form.Add_Shown({ Update-OverlayState; $timer.Start() })
-$form.Add_FormClosed({ $timer.Stop(); $timer.Dispose() })
+$form.Add_Shown({
+  Update-OverlayState
+  $stopForm.Show()
+  $timer.Start()
+})
+$form.Add_FormClosed({
+  $timer.Stop()
+  $timer.Dispose()
+  try { $stopForm.Close() } catch {}
+  try { $stopForm.Dispose() } catch {}
+})
 [System.Windows.Forms.Application]::Run($form)
