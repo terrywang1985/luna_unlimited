@@ -106,7 +106,10 @@ async function inspectRepositoryTree(rootPath, maxFiles, maxBytes) {
         throw normalizeCoreError(error, CoreErrorCode.IO_ERROR);
       });
       files += 1;
-      bytes += info.size;
+      // Directory inode sizes are filesystem-specific (commonly 4096 bytes on
+      // ext4) and do not represent repository payload. Counting them makes the
+      // same clone pass on one workspace filesystem and fail on another.
+      if (info.isFile()) bytes += info.size;
       if (files > maxFiles) {
         repositoryError(CoreErrorCode.REPOSITORY_LIMIT_EXCEEDED, `Repository exceeds ${maxFiles} filesystem entries`);
       }

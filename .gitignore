@@ -29,3 +29,6 @@ mcp-smoke-test.txt
 Thumbs.db
 .idea/
 .vscode/
+
+# Local model/runtime caches
+.cache/
