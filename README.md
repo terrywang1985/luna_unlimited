@@ -72,6 +72,14 @@ flowchart LR
 
 `tools/list` 会把不同 operation 暴露为 `request.oneOf` 分支，因此模型仍能看到每个子操作的精确参数，而不是面对一个任意字符串路由器。
 
+### Luna Unlimited 与 Luna Cloud 的能力边界
+
+上面的 Tool Surface 只描述 **Luna Unlimited 本机 Runtime**，不等于 Luna 平台的全部能力。若 Host 同时提供 Luna Cloud `cloud.control`，Agent 应先调用 `cloud.control(service=capabilities, operation=list)` 再判断某项账号级、云端或已连接服务能力是否可用。
+
+例如 GitHub 私有认证、创建仓库和 push 凭据由 Luna Cloud 管理：仓库创建走 Cloud `github.create_repo`，之后 Workspace 使用普通 native Git 命令完成 fetch/pull/push，OAuth/PAT 不进入 Workspace。Cloudflare、Secrets、Browser/Desktop 路由和 Provider Connections 也可能由 Luna Cloud 提供。
+
+**原则：本地 MCP 没看到某个动作，不代表 Luna 整体没有；在宣告能力不可用或要求用户手工操作前，先查 Luna Cloud capabilities。**
+
 ## 五分钟开始
 
 运行环境：Windows 10/11 或主流 x64/arm64 Linux、Node.js 20 或更高版本，以及能够使用 OpenAI Secure MCP Tunnel 与 ChatGPT Developer mode 的账号/工作区。

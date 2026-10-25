@@ -55,6 +55,7 @@ try {
     || capabilities.features?.batchWrite !== true
     || capabilities.features?.commandProjectBoundary !== true
     || capabilities.features?.publicRepositoryClone !== true
+    || !capabilities.hostCapabilities?.lunaCloud?.discovery?.includes("capabilities")
   ) {
     throw new Error("Capability discovery did not expose the reliable-project feature set");
   }

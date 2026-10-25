@@ -44,6 +44,19 @@ export function buildCapabilities({ workspace, policy, limits, execution, adapte
       checkpoint: true,
       checkpointBackend: "local-snapshot"
     },
+    hostCapabilities: {
+      scope: "This catalog describes the local Luna Unlimited runtime only.",
+      lunaCloud: {
+        discovery: "If the host exposes Luna Cloud cloud.control, call service=capabilities operation=list before concluding that an account, cloud, or connected-service capability is unavailable.",
+        examples: [
+          "authenticated GitHub repository creation and native git push",
+          "Cloudflare account operations",
+          "cloud/local browser and desktop routing",
+          "secret-backed provider connections"
+        ],
+        githubRule: "When Luna Cloud github reports connected/push_ready, use github.create_repo for repository creation and ordinary native git commands for fetch/push. Do not start browser/device authentication or ask the user for a token."
+      }
+    },
     tools,
     actions,
     limits: {

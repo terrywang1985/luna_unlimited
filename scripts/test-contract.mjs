@@ -128,6 +128,12 @@ try {
   if (!capabilities.actions?.["workspace.write_text"] || capabilities.workspace?.rootName?.includes(":\\")) {
     throw new Error("Capability action summary is incomplete or leaked an absolute workspace path");
   }
+  if (
+    !capabilities.hostCapabilities?.lunaCloud?.discovery?.includes("cloud.control")
+    || !capabilities.hostCapabilities?.lunaCloud?.githubRule?.includes("github.create_repo")
+  ) {
+    throw new Error("Capability discovery did not explain the optional Luna Cloud companion surface");
+  }
 
   const listing = await client.callTool({
     name: "workspace.read",

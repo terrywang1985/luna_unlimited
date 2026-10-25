@@ -74,6 +74,25 @@ project.dependencies
 
 当前 v0.8.1 已完成 Action Registry / Compact Domain Tool Surface、显式系统/root 执行档位，以及 Host 默认/本地可选的系统审批模式。下一阶段按 TODO 推进 policy persistence、project task 或 process manager，不重复实现既有 checkpoint、patch、Artifact Bridge、公开 GitHub Clone 和系统执行档位。
 
+## Luna Cloud companion 能力发现规则
+
+Luna Unlimited 暴露的是**本机 Runtime 能力**，不是 Luna 平台全部能力。运行在 Luna Cloud AI Computer / Workspace Host 中时，Host 还可能额外提供 `cloud.control`，其中包含账号级、云端和已连接服务能力。
+
+因此 Agent 在判断“做不了”之前必须遵循：
+
+1. 先调用本机 `luna.capabilities` 了解本地 Runtime；
+2. 如果 Host 暴露 `cloud.control`，再调用 `cloud.control(service=capabilities, operation=list)`；
+3. **不得因为 Luna Unlimited 本地 Tool Surface 没有某个动作，就推断 Luna 整体没有该能力。**
+
+典型例子是 GitHub：
+
+- 仓库创建、GitHub 连接状态属于 Luna Cloud `github` service；
+- 当 Cloud capability 显示 `connected=true` / `create_repo_ready=true` / `push_ready=true` 时，创建仓库使用 `cloud.control(service=github, operation=create_repo)`；
+- 创建完成后，Workspace 中继续使用普通 native `git fetch/pull/push`；认证由 Luna Cloud Gateway 注入，不把 OAuth/PAT 暴露给 Workspace；
+- **不要**另起 GitHub Browser/Device Login，也不要向用户索要 token。
+
+Cloudflare、Secrets、远程/本地 Browser、Desktop、Provider Connections 等也可能位于 Luna Cloud，而不是 Luna Unlimited 本地 14/19 个领域工具中。具体能力以当次 `capabilities/list` 为准，不要硬编码“没有”。
+
 ## 架构硬约束
 
 推荐目录：

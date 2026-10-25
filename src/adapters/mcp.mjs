@@ -88,7 +88,7 @@ function createMcpServer(core, context) {
     "luna.capabilities",
     {
       title: "Discover Luna capabilities",
-      description: "Return the compact public tool catalog, operation-level permissions, limits, safe workspace alias, and policy revision.",
+      description: "Return the local Luna Unlimited tool catalog, permissions, limits, safe workspace alias, and policy revision. This is only the local runtime surface: if the host also exposes Luna Cloud cloud.control, call cloud.control(service=capabilities, operation=list) before concluding that account/cloud capabilities such as authenticated GitHub repository creation or push are unavailable.",
       inputSchema: {},
       annotations: { readOnlyHint: true, openWorldHint: false, destructiveHint: false }
     },
